@@ -29,17 +29,18 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
     A = __Tidak perlu directory baru, tidak perlu generate project baru.__ Repo yang sekarang sudah ADALAH "dasar" milestone ini — ini paket participant yang sudah disiapkan instructor (berbasis __uv__, Python ≥3.11, FastAPI engine + Streamlit UI + `gold.sql` contract + test harness). Yang harus Anda lakukan adalah __mengisi bagian yang hilang di dalam repo ini__, bukan scaffold proyek baru.
 
 
-    Q = Bagaimana menghubungkan file-file python di repo ini agar bisa      berinteraksi dengan database postgre?
-    Bagaimana membuat file koneksi agar file file python ini bisa berhubungan dengan database apakah harus buat connection.py? dan bagiamana nanti jika saya eksekusi 'loader_bronze.py' apakah saya harus run file connection dan bagaimana jika saya melakukan via DAG nantinya bagaimana membuat koneksi tetap valid?
-    A = MEnggunakan file shared/db.py. aman digunakan jika secara file terpisah atau secara beruntun/pipepline dengan airflow.
-    Tidak perlu membuat atau menjalankan `connection.py` terpisah. Gunakan helper `shared/db.py` melalui `pipelines.ingestion.db`. Loader meminta koneksi saat fungsi loader berjalan, misalnya dengan `connect("local")`, lalu koneksi ditutup setelah pekerjaan selesai. Untuk eksekusi manual, konfigurasi database harus tersedia di `.env` atau environment. Untuk Airflow, konfigurasi yang sama harus tersedia di lingkungan worker/container Airflow juga; `localhost` di dalam container menunjuk ke container itu sendiri, bukan otomatis ke komputer host. Pipeline milestone harus memakai PostgreSQL lokal, bukan Neon. Jangan menulis password ke kode atau log.
+        Q = Bagaimana menghubungkan file-file python di repo ini agar bisa      berinteraksi dengan database postgre?
+        Bagaimana membuat file koneksi agar file file python ini bisa berhubungan dengan database apakah harus buat connection.py? dan bagiamana nanti jika saya eksekusi 'loader_bronze.py' apakah saya harus run file connection dan bagaimana jika saya melakukan via DAG nantinya bagaimana membuat koneksi tetap valid?
+        A = MEnggunakan file shared/db.py. aman digunakan jika secara file terpisah atau secara beruntun/pipepline dengan airflow.
+        Tidak perlu membuat atau menjalankan `connection.py` terpisah. Gunakan helper `shared/db.py` melalui `pipelines.ingestion.db`. Loader meminta koneksi saat fungsi loader berjalan, misalnya dengan `connect("local")`, lalu koneksi ditutup setelah pekerjaan selesai. Untuk eksekusi manual, konfigurasi database harus tersedia di `.env` atau environment. Untuk Airflow, konfigurasi yang sama harus tersedia di lingkungan worker/container Airflow juga; `localhost` di dalam container menunjuk ke container itu sendiri, bukan otomatis ke komputer host. Pipeline milestone harus memakai PostgreSQL lokal, bukan Neon. Jangan menulis password ke kode atau log.
 
     Q = Untuk schema bronze pakai desain 'shred & load' atau pakai JSONB ?
+    A = pADA file readmie ada anjuran JSONB. README memperbolehkan payload Bronze disimpan sebagai JS   raw tetap disimpan tanpa perubahan di `data/raw/`.
 
-    A = pADA file readmie ada anjuran JSONB. README memperbolehkan payload Bronze disimpan sebagai JSONB atau representasi setara. Desain yang ada memakai satu tabel `bronze.source_records` dengan kolom `payload JSONB` dan kolom lineage terpisah. JSONB menyimpan nilai JSON, tetapi bukan teks file persis byte demi byte (misalnya spasi dan urutan key). Karena itu file raw tetap disimpan tanpa perubahan di `data/raw/`.
-
-    Q = Bagaimana cara membuat script untuk menjalankan schema agar tabel benar-benar dibuat di database?
+    Q = Bagaimana cara membuat script untuk menjalankan schema agar tabel benar-benar dibuat di     database?
     A = PostgreSQL dan database tujuan harus sudah hidup/tersedia terlebih dahulu. File SQL adalah resep pembentukan schema/tabel; untuk menerapkannya gunakan `uv run python -m pipelines.ingestion.initialize_database` dari folder `PHASE1`. Script tersebut memakai `shared/db.py`, memilih koneksi `local`, lalu menjalankan `bronze.sql`, `silver.sql`, `gold.sql`, dan `ops.sql` dalam satu koneksi/transaksi. Script dapat dijalankan manual untuk pengembangan, dan fungsi `run()` yang sama dapat dipanggil sebagai task inisialisasi dari DAG. Jika salah satu file
+
+    cara reset DB = DROP SCHEMA IF EXISTS bronze, silver, gold, ops CASCADE;
 
 
     Q = Apa perbedaan `pipelines/__init__.py` dan `pipelines/ingestion/__init__.py`?
@@ -49,7 +50,7 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
     A = Tidak wajib secara teori, tetapi berguna dan sesuai schema Bronze saat ini. `bronze.source_records` mencatat lineage per record; `bronze.ingestion_files` mencatat metadata per file dan per run, seperti SHA-256 hasil hitung loader, ukuran, jumlah record, dan `pipeline_run_id`. Tabel ini tidak menyimpan checksum manifest karena manifest diabaikan.
 
 
-    ==== Bronze
+    ==== Bronze=====
 
 
 
@@ -67,7 +68,7 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
     Q = Bagaimana cara memastikan dalam satu batch data yang sama tidak terambil 2 kali pada batch berbeda.
     A = Batch adalah cara mengirim data dalam potongan-potongan; batch ID saja tidak mencegah record yang sama terkirim ulang. Berikan setiap record kunci sumber yang stabil, misalnya pasangan `(source_file, source_row_number)`, buat pasangan itu `UNIQUE` di PostgreSQL, dan lakukan insert dengan `ON CONFLICT DO NOTHING` (atau strategi upsert yang disengaja). Nomor baris harus dihitung dari posisi record di seluruh file, bukan dimulai ulang dari 1 pada setiap batch. Dengan demikian, bila batas batch tumpang tindih atau run diulang, database menolak record yang sama. Skema Bronze saat ini sudah memiliki `UNIQUE (source_file, source_row_number)`. Batasannya: jika isi file berubah tetapi nama dan nomor baris sama, record baru akan dianggap konflik; untuk input yang dapat berubah, gunakan identitas versi/checksum file dalam kunci atau perlakukan setiap versi sebagai file berbeda. Tetap rekonsiliasikan jumlah yang dibaca, dimasukkan, dan dilewati.
 
- Q = query sederhana untuk memastikan tidak ada duplikat antar batch
+    Q = query sederhana untuk memastikan tidak ada duplikat antar batch
     A = SELECT source_file, source_row_number, COUNT(*) AS jumlah
         FROM bronze.source_records
         GROUP BY source_file, source_row_number
@@ -75,6 +76,18 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
 
     Q = apa fungis file init di setiap directory script?
     A = “dua file init” sebagai pipelines/__init__.py dan pipelines/ingestion/__init__.py. Keduanya bukan program yang membuat tabel atau membuka koneksi. Keduanya     membantu Python mengenali folder sebagai package agar import seperti from pipelines.ingestion.db import connect dapat digunakan.
+
+    Q = Ketika build bronze bekerja dalam beberapa batch, Bagaimana mengetahui suatu data raw sudah ingested semua. secara kita eksekusi terus menerus. Pada kasus di dalam pipeline chaining bagaimana DAG mengetahui kapan harus melanjutkan ke fase berikutny?
+
+
+    A = Pada baris 211 terdapat kode untuk mengumpulkan semua file yang ada 
+    ``raw_root.rglob("*")` mengumpulkan __semua__ file lalu masuk ke variable 'source_files'
+    dari situ acuan untuk loop ingestion
+` 
+    
+    Jika tidak ada file sama sekali → FileNotFoundError → task DAG gagal (tidak lanjut). ` raise FileNotFoundError(f"No JSON or CSV source files found under {raw_root}")`
+
+    ====== Silver ==========
 
     Q = <Silver> Bagaimana cara untuk mendeteksi DUplikasi pada data.
     A = Pakai perbandingan beberpa kolom dari row 
@@ -84,6 +97,11 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
     Q = Bagaimana memastikan 	Tipe data, UTC, deduplication, referential checks, rejection, dan temporal logic benar?
 
 
+
+
+
+
+    ====== DAG =====
      Q = Bagaimana cara setting airflow agar mengikut sertakan suatu script atau tidak
 
 
