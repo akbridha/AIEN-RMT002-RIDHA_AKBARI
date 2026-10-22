@@ -512,7 +512,10 @@ def _insert_rejections(
     inserted = 0
     for start in range(0, len(rejections), batch_size):
         batch = rejections[start : start + batch_size]
-        placeholder = "(%s, %s, %s, %s, %s::jsonb, %s, %s, %s)"
+        placeholder = (
+            "(%s::TEXT, %s::TEXT, %s::BIGINT, %s::TEXT, %s::TEXT, "
+            "%s::JSONB, %s::TEXT, %s::BIGINT, %s::TEXT)"
+        )
         values_clause = ", ".join([placeholder] * len(batch))
         params = tuple(
             value
@@ -522,6 +525,7 @@ def _insert_rejections(
                 item["source_file"],
                 item["source_row_number"],
                 item["reason_code"],
+                item["reason_detail"],
                 json.dumps(item["payload"], ensure_ascii=False, separators=(",", ":")),
                 item["rejected_stage"],
                 item["bronze_record_id"],
@@ -530,15 +534,15 @@ def _insert_rejections(
         )
         query = f"""
             INSERT INTO silver.rejected_records (
-                entity, source_file, source_row_number, reason_code, payload,
-                rejected_stage, bronze_record_id, pipeline_run_id
+                entity, source_file, source_row_number, reason_code, reason_detail,
+                payload, rejected_stage, bronze_record_id, pipeline_run_id
             )
             SELECT DISTINCT ON (v.bronze_record_id, v.rejected_stage, v.reason_code)
-                v.entity, v.source_file, v.source_row_number, v.reason_code,
+                v.entity, v.source_file, v.source_row_number, v.reason_code, v.reason_detail,
                 v.payload, v.rejected_stage, v.bronze_record_id, v.pipeline_run_id
             FROM (VALUES {values_clause}) AS v(
-                entity, source_file, source_row_number, reason_code, payload,
-                rejected_stage, bronze_record_id, pipeline_run_id
+                entity, source_file, source_row_number, reason_code, reason_detail,
+                payload, rejected_stage, bronze_record_id, pipeline_run_id
             )
             WHERE NOT EXISTS (
                 SELECT 1 FROM silver.rejected_records existing
@@ -623,12 +627,28 @@ def run(
                 }
             )
         results["source_records_read"] = len(source_rows)
+        log.info(
+            "Read %d Bronze records for %d Silver entities (pipeline_run_id=%s)",
+            len(source_rows),
+            len(entities),
+            run_id,
+        )
         references = _load_reference_values(connection)
         rejections: list[dict[str, Any]] = []
 
-        for entity, spec in ENTITY_SPECS.items():
+        for entity_number, (entity, spec) in enumerate(ENTITY_SPECS.items(), start=1):
+            entity_records = by_entity[entity]
+            log.info(
+                "[%d/%d] Processing %s -> silver.%s (%d Bronze records)",
+                entity_number,
+                len(ENTITY_SPECS),
+                entity,
+                spec.table,
+                len(entity_records),
+            )
+            rejected_before_entity = len(rejections)
             candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
-            for record in by_entity[entity]:
+            for record in entity_records:
                 try:
                     values = _normalize_record(record, spec)
                 except (ValueError, TypeError, InvalidOperation) as exc:
@@ -715,10 +735,21 @@ def run(
             results["rows_loaded"] += loaded
             results["rows_deduplicated"] += len(candidates) - len(selected)
             results["tables"][spec.table] = {
-                "read": len(by_entity[entity]),
+                "read": len(entity_records),
                 "loaded": loaded,
                 "deduplicated": len(candidates) - len(selected),
+                "rejected": len(rejections) - rejected_before_entity,
             }
+            log.info(
+                "[%d/%d] Finished silver.%s: read=%d loaded=%d deduplicated=%d rejected=%d",
+                entity_number,
+                len(ENTITY_SPECS),
+                spec.table,
+                len(entity_records),
+                loaded,
+                len(candidates) - len(selected),
+                len(rejections) - rejected_before_entity,
+            )
 
             reference = next(
                 (reference for reference in REFERENCE_QUERIES if reference.endswith(f".{spec.keys[0]}")),
@@ -735,6 +766,11 @@ def run(
                 )
 
         results["rows_rejected"] = len(rejections)
+        log.info(
+            "Writing %d rejected Silver records in batches of %d",
+            len(rejections),
+            batch_size,
+        )
         results["rejection_rows_added"] = _insert_rejections(
             connection,
             rejections,

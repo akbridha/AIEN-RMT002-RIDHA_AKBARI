@@ -539,7 +539,7 @@ berguna daripada banyak file kode yang belum pernah diuji.
 - [V] PostgreSQL lokal bisa diakses pipeline.
 - [V] Schema Bronze, Silver, dan Ops dibuat; Gold contract tetap kompatibel.
 - [V] Bronze menyimpan payload dan lineage serta aman untuk rerun. bagaimana cara buktikan
-- [ ] Silver bertipe, dinormalisasi, dideduplikasi, dan mencatat penolakan.
+- [v] Silver bertipe, dinormalisasi, dideduplikasi, dan mencatat penolakan.
 - [ ] Kelima tabel Gold terisi dengan grain dan metrik yang sesuai kontrak.
 - [ ] Quality checks benar-benar memeriksa data dan menghentikan alur bila gagal.
 - [ ] DAG menjalankan pipeline nyata dari validasi sampai validasi akhir.

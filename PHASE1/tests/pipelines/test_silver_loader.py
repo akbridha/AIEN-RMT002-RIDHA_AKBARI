@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -96,6 +97,92 @@ def test_insert_rows_uses_configured_batch_size():
 
     assert count == 3
     assert [len(params) // 3 for _, params in connection.calls] == [2, 1]
+
+
+def test_insert_rejections_types_bronze_id_as_bigint_and_includes_reason_detail():
+    class FakeCursor:
+        def fetchall(self):
+            return [(1,)]
+
+    class FakeConnection:
+        def __init__(self):
+            self.query = ""
+            self.params = ()
+
+        def execute(self, query, params):
+            self.query = query
+            self.params = params
+            return FakeCursor()
+
+    connection = FakeConnection()
+    rejections = [
+        {
+            "entity": "order_items",
+            "source_file": "operational/order_items.json",
+            "source_row_number": 12,
+            "reason_code": "MISSING_FK",
+            "reason_detail": "product_id='P-1' does not exist",
+            "payload": {"order_item_id": "ITEM-1"},
+            "rejected_stage": "silver.order_items",
+            "bronze_record_id": 9876543210,
+        }
+    ]
+
+    count = build_silver._insert_rejections(connection, rejections, "run-1")
+
+    assert count == 1
+    assert "%s::BIGINT" in connection.query
+    assert "existing.bronze_record_id = v.bronze_record_id" in connection.query
+    assert "reason_detail" in connection.query
+    assert connection.params[7] == 9876543210
+
+
+def test_run_logs_entity_progress_and_counts(monkeypatch, caplog):
+    class FakeCursor:
+        def __init__(self, rows=()):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+        def execute(self, query, params=()):
+            if "FROM bronze.source_records" in query:
+                return FakeCursor(
+                    [
+                        (
+                            1,
+                            "city_reference",
+                            "reference/city_reference.json",
+                            1,
+                            {"city_id": "JKT", "city_name": "Jakarta", "country": "ID"},
+                            datetime(2026, 10, 22, tzinfo=UTC),
+                        )
+                    ]
+                )
+            if query.startswith("SELECT"):
+                return FakeCursor()
+            return FakeCursor()
+
+    monkeypatch.setattr(build_silver, "connect", lambda _target: FakeConnection())
+
+    with caplog.at_level(logging.INFO):
+        results = build_silver.run(pipeline_run_id="run-1")
+
+    assert results["tables"]["cities"] == {
+        "read": 1,
+        "loaded": 1,
+        "deduplicated": 0,
+        "rejected": 0,
+    }
+    assert "[1/19] Processing city_reference -> silver.cities (1 Bronze records)" in caplog.text
+    assert "[1/19] Finished silver.cities: read=1 loaded=1 deduplicated=0 rejected=0" in caplog.text
 
 
 @pytest.mark.parametrize("batch_size", [0, -1, 5001, 1.5, True])
