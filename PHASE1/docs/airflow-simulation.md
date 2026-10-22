@@ -55,10 +55,30 @@ Set `PIPELINE_MODE=real` di environment compose (mis. di `.env`), lalu
 | initialize_postgres_schemas | `pipelines.ingestion.initialize_database:run` |
 | load_bronze | `pipelines.bronze.build_bronze:run` |
 | build_silver | `pipelines.silver.build_silver:run` |
+| quality_gate | `pipelines.quality.quality_gate:run` |
 | build_gold | `pipelines.gold.build_gold:run` |
 | validate_gold_and_record_metadata | `pipelines.quality.validate_gold:run` |
 
 Modul yang belum ada menghasilkan error eksplisit (bukan sukses palsu).
+
+Quality gate real memeriksa ketersediaan tabel Silver yang menjadi input Gold,
+memastikan order dan item diproduksi pada run tersebut, memvalidasi referensi
+customer/channel/order/product/promotion/inventory, lalu mencatat hasil tiap
+pemeriksaan dan keputusan `silver_gate` ke `ops.quality_checks` dan
+`ops.quality_gates`. Record yang ditolak tetap dihitung dan dirinci sebagai
+informasi; record tersebut dikarantina di Silver dan tidak otomatis menggagalkan
+gate. Pemeriksaan yang gagal menyebabkan task Airflow gagal sehingga Gold
+tidak dijalankan.
+
+Gate juga dapat dijalankan langsung dari folder `PHASE1` setelah schema Ops
+diinisialisasi:
+
+```powershell
+python -m pipelines.quality.quality_gate --pipeline-run-id <pipeline_run_id>
+```
+
+Gunakan `pipeline_run_id` yang sama dengan tahap Silver. Koneksi database lokal
+mengikuti konfigurasi `LOCAL_DATABASE_URL` atau variabel `LOCAL_POSTGRES_*`.
 
 ## Catatan teknis
 

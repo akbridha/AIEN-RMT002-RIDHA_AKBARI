@@ -123,7 +123,36 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
 
 
 
+Set-Location PHASE1
 
+uv run python -m pipelines.bronze.build_bronze
+uv run python -m pipelines.silver.build_silver
+uv run python -m pipelines.gold.build_gold
+
+Parameter opsional
+Tahap	 Parameter	            Fungsi	                     Default
+Bronze	--input PATH	        Direktori file raw JSON/CSV	    -data/raw
+Bronze	--pipeline-run-id ID	ID eksekusi untuk lineage	    -Dibuat otomatis
+Bronze	--batch-size N	        Jumlah record per batch insert	-500
+Silver	--pipeline-run-id ID	ID eksekusi untuk lineage	    -Dibuat otomatis
+Silver	--batch-size N	        Jumlah baris per batch insert	-500, maksimum 5000
+Gold	--pipeline-run-id ID	ID eksekusi untuk lineage	    -Dibuat otomatis
+
+
+
+
+SELECT roas FROM gold.channel_campaign_daily
+ORDER BY metric_date ASC, sales_channel ASC, campaign_id ASC LIMIT 100
+
+
+SELECT active_channel FROM gold.customer_daily
+ORDER BY customer_id ASC, metric_date ASC LIMIT 100
+
+SELECT stockout_rate FROM gold.executive_kpis_daily
+ORDER BY metric_date ASC LIMIT 100
+
+SELECT store_id FROM gold.order_360
+ORDER BY order_id ASC LIMIT 100
 
 
 

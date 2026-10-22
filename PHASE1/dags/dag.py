@@ -55,6 +55,7 @@ REAL_STAGE_TARGETS = {
     "initialize_postgres_schemas": ("pipelines.ingestion.initialize_database", "run"),
     "load_bronze": ("pipelines.bronze.build_bronze", "run"),
     "build_silver": ("pipelines.silver.build_silver", "run"),
+    "quality_gate": ("pipelines.quality.quality_gate", "run"),
     "build_gold": ("pipelines.gold.build_gold", "run"),
     "validate_gold_and_record_metadata": ("pipelines.quality.validate_gold", "run"),
 }
@@ -197,10 +198,10 @@ def build_silver(**context: Any) -> dict[str, Any]:
 def quality_gate(**context: Any) -> dict[str, Any]:
     run_id = _run_id(context)
     checks = [
-        "uniqueness grain per tabel Gold",
-        "reconciliation net_revenue vs Silver",
-        "reconciliation refunded_amount vs event payment/refund",
-        "tidak ada fact multiplication pada join promotion/campaign/inventory",
+        "ketersediaan tabel Silver yang dibutuhkan Gold",
+        "orders dan order_items dihasilkan pada run saat ini",
+        "referensi customer/channel/order/product/promotion/inventory valid",
+        "jumlah rejected records tercatat dan dirinci",
     ]
     if PIPELINE_MODE == "real":
         return _execute_real("quality_gate", context)
