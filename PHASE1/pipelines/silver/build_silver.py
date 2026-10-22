@@ -15,7 +15,8 @@ from pipelines.ingestion.db import connect
 
 log = logging.getLogger(__name__)
 
-MAX_BATCH_SIZE = 500
+DEFAULT_BATCH_SIZE = 500
+MAX_BATCH_SIZE = 5000
 
 
 def standardize_time_utc(value: Any) -> datetime | None:
@@ -454,6 +455,13 @@ def _load_reference_values(connection: Any) -> dict[str, set[Any]]:
     return references
 
 
+def _validate_batch_size(batch_size: int) -> None:
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int):
+        raise ValueError("batch_size must be an integer.")
+    if not 1 <= batch_size <= MAX_BATCH_SIZE:
+        raise ValueError(f"batch_size must be between 1 and {MAX_BATCH_SIZE}.")
+
+
 def _insert_rows(
     connection: Any,
     *,
@@ -461,12 +469,13 @@ def _insert_rows(
     columns: list[str],
     keys: tuple[str, ...],
     rows: list[dict[str, Any]],
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> int:
     if not rows:
         return 0
     inserted_count = 0
-    for start in range(0, len(rows), MAX_BATCH_SIZE):
-        batch = rows[start : start + MAX_BATCH_SIZE]
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start : start + batch_size]
         insert_columns = [*columns, "bronze_record_id", "pipeline_run_id"]
         row_placeholder = "(" + ", ".join(["%s"] * len(insert_columns)) + ")"
         values_clause = ", ".join([row_placeholder] * len(batch))
@@ -492,12 +501,17 @@ def _insert_rows(
     return inserted_count
 
 
-def _insert_rejections(connection: Any, rejections: list[dict[str, Any]], run_id: str) -> int:
+def _insert_rejections(
+    connection: Any,
+    rejections: list[dict[str, Any]],
+    run_id: str,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> int:
     if not rejections:
         return 0
     inserted = 0
-    for start in range(0, len(rejections), MAX_BATCH_SIZE):
-        batch = rejections[start : start + MAX_BATCH_SIZE]
+    for start in range(0, len(rejections), batch_size):
+        batch = rejections[start : start + batch_size]
         placeholder = "(%s, %s, %s, %s, %s::jsonb, %s, %s, %s)"
         values_clause = ", ".join([placeholder] * len(batch))
         params = tuple(
@@ -568,9 +582,11 @@ def _winner_order(spec: EntitySpec, record: dict[str, Any], values: dict[str, An
 def run(
     pipeline_run_id: str | None = None,
     context: dict[str, Any] | None = None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> dict[str, Any]:
-    """Build all Silver tables from Bronze, preserving lineage and rejected rows."""
+    """Build Silver from Bronze using ``batch_size`` rows per insert statement."""
     del context
+    _validate_batch_size(batch_size)
     run_id = pipeline_run_id or f"manual-{uuid4()}"
     results: dict[str, Any] = {
         "pipeline_run_id": run_id,
@@ -694,6 +710,7 @@ def run(
                 columns=list(spec.field_map),
                 keys=spec.keys,
                 rows=insert_rows,
+                batch_size=batch_size,
             )
             results["rows_loaded"] += loaded
             results["rows_deduplicated"] += len(candidates) - len(selected)
@@ -718,7 +735,12 @@ def run(
                 )
 
         results["rows_rejected"] = len(rejections)
-        results["rejection_rows_added"] = _insert_rejections(connection, rejections, run_id)
+        results["rejection_rows_added"] = _insert_rejections(
+            connection,
+            rejections,
+            run_id,
+            batch_size=batch_size,
+        )
         results["rejection_candidates"] = len(rejections)
     log.info("Silver build completed: %s", results)
     return results
@@ -727,9 +749,15 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pipeline-run-id")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=f"Rows per Silver insert batch (default: {DEFAULT_BATCH_SIZE}; max: {MAX_BATCH_SIZE}).",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    run(pipeline_run_id=args.pipeline_run_id)
+    run(pipeline_run_id=args.pipeline_run_id, batch_size=args.batch_size)
 
 
 if __name__ == "__main__":

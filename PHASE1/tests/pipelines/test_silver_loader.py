@@ -69,3 +69,41 @@ def test_normalize_event_flattens_payload_and_uses_bronze_ingestion_time():
     assert values["order_id"] == "ORD-1"
     assert values["amount"] == Decimal("9.25")
     assert values["ingested_at_utc"] == bronze_ingested_at
+
+
+def test_insert_rows_uses_configured_batch_size():
+    class FakeConnection:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, query, params):
+            self.calls.append((query, params))
+
+    connection = FakeConnection()
+    rows = [
+        {"id": f"ID-{number}", "bronze_record_id": number, "pipeline_run_id": "run-1"}
+        for number in range(3)
+    ]
+
+    count = build_silver._insert_rows(
+        connection,
+        table="example",
+        columns=["id"],
+        keys=("id",),
+        rows=rows,
+        batch_size=2,
+    )
+
+    assert count == 3
+    assert [len(params) // 3 for _, params in connection.calls] == [2, 1]
+
+
+@pytest.mark.parametrize("batch_size", [0, -1, 5001, 1.5, True])
+def test_run_rejects_invalid_batch_size_before_connecting(batch_size, monkeypatch):
+    def unexpected_connect(_target):
+        raise AssertionError("Database should not be connected for an invalid batch size")
+
+    monkeypatch.setattr(build_silver, "connect", unexpected_connect)
+
+    with pytest.raises(ValueError, match="batch_size"):
+        build_silver.run(batch_size=batch_size)
