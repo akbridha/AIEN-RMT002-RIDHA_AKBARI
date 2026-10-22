@@ -267,7 +267,7 @@ with DAG(
     tags=["milestone1", "omnichannel", "simulasi" if PIPELINE_MODE == "simulate" else "real"],
     doc_md=__doc__,
     default_args={
-        "owner": "data-engineer",
+        "owner": "aXbar",
         "retries": 0,  # kegagalan (mis. quality gate) langsung terlihat di UI
     },
 ) as dag:

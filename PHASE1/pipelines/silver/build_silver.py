@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from pipelines.ingestion.db import connect
+from pipelines.ingestion.run_tracking import execute_tracked_stage
 
 log = logging.getLogger(__name__)
 
@@ -617,7 +618,7 @@ def _winner_order(spec: EntitySpec, record: dict[str, Any], values: dict[str, An
     return (-record["record_id"],)
 
 
-def run(
+def _run(
     pipeline_run_id: str | None = None,
     context: dict[str, Any] | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -826,6 +827,29 @@ def run(
         results["rejection_candidates"] = len(rejections)
     log.info("Silver build completed: %s", results)
     return results
+
+
+def run(
+    pipeline_run_id: str | None = None,
+    context: dict[str, Any] | None = None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> dict[str, Any]:
+    """Build Silver and persist the stage result to Ops."""
+    _validate_batch_size(batch_size)
+    run_id = pipeline_run_id or f"manual-{uuid4()}"
+    dag_run = (context or {}).get("dag_run")
+    return execute_tracked_stage(
+        connect=connect,
+        pipeline_run_id=run_id,
+        task_name="build_silver",
+        trigger_source="airflow" if dag_run is not None else "manual",
+        dag_run_id=str(dag_run.run_id) if dag_run is not None else None,
+        operation=lambda: _run(
+            pipeline_run_id=run_id,
+            context=context,
+            batch_size=batch_size,
+        ),
+    )
 
 
 def main() -> None:

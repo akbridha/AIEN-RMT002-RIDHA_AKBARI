@@ -138,6 +138,8 @@ def test_insert_rejections_types_bronze_id_as_bigint_and_includes_reason_detail(
 
 
 def test_run_logs_entity_progress_and_counts(monkeypatch, caplog):
+    ops_calls = []
+
     class FakeCursor:
         def __init__(self, rows=()):
             self.rows = rows
@@ -153,6 +155,9 @@ def test_run_logs_entity_progress_and_counts(monkeypatch, caplog):
             return None
 
         def execute(self, query, params=()):
+            if "ops.pipeline_runs" in query or "ops.pipeline_tasks" in query:
+                ops_calls.append((query, params))
+                return FakeCursor()
             if "FROM bronze.source_records" in query:
                 return FakeCursor(
                     [
@@ -183,6 +188,8 @@ def test_run_logs_entity_progress_and_counts(monkeypatch, caplog):
     }
     assert "[1/19] Processing city_reference -> silver.cities (1 Bronze records)" in caplog.text
     assert "[1/19] Finished silver.cities: read=1 loaded=1 deduplicated=0 rejected=0" in caplog.text
+    assert any("INSERT INTO ops.pipeline_runs" in query for query, _ in ops_calls)
+    assert any("INSERT INTO ops.pipeline_tasks" in query for query, _ in ops_calls)
 
 
 @pytest.mark.parametrize("batch_size", [0, -1, 5001, 1.5, True])

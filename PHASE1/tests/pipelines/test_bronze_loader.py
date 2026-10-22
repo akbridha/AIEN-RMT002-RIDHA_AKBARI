@@ -20,6 +20,7 @@ class FakeConnection:
     def __init__(self):
         self.records = {}
         self.files = {}
+        self.ops_calls = []
 
     def __enter__(self):
         return self
@@ -28,6 +29,10 @@ class FakeConnection:
         return None
 
     def execute(self, query, params=()):
+        if "ops.pipeline_runs" in query or "ops.pipeline_tasks" in query:
+            self.ops_calls.append((query, params))
+            return FakeCursor()
+
         if "SELECT file_checksum" in query:
             source_file = params[0]
             checksums = {
@@ -93,6 +98,8 @@ def test_loader_loads_json_and_csv_in_batches_and_is_idempotent(tmp_path, monkey
     assert len(database.files) == 4
     assert database.records[("operational/orders.json", 1)][3] == "SRC-1"
     assert json.loads(database.records[("operational/orders.json", 1)][4]) == orders[0]
+    assert sum("INSERT INTO ops.pipeline_runs" in query for query, _ in database.ops_calls) == 2
+    assert sum("INSERT INTO ops.pipeline_tasks" in query for query, _ in database.ops_calls) == 2
 
 
 def test_loader_rejects_file_changed_since_previous_load(tmp_path, monkeypatch):
@@ -121,6 +128,7 @@ def test_loader_does_not_require_manifest(tmp_path, monkeypatch):
 
     assert result["files_processed"] == 1
     assert result["rows_read"] == 0
+    assert result["pipeline_run_id"].startswith("manual-")
     assert ("items.json", result["pipeline_run_id"]) in database.files
 
 

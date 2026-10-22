@@ -14,6 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from pipelines.ingestion.db import connect
+from pipelines.ingestion.run_tracking import execute_tracked_stage
 
 log = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ def _record_file_ingestion(
     )
 
 
-def run(
+def _run(
     pipeline_run_id: str | None = None,
     context: dict[str, Any] | None = None,
     input_dir: Path | str = DEFAULT_INPUT_DIR,
@@ -286,6 +287,32 @@ def run(
             )
 
     return totals
+
+
+def run(
+    pipeline_run_id: str | None = None,
+    context: dict[str, Any] | None = None,
+    input_dir: Path | str = DEFAULT_INPUT_DIR,
+    batch_size: int = 500,
+) -> dict[str, Any]:
+    """Load Bronze records and persist the stage result to Ops."""
+    if not 1 <= batch_size <= MAX_BATCH_SIZE:
+        raise ValueError(f"batch_size must be between 1 and {MAX_BATCH_SIZE}.")
+    run_id = pipeline_run_id or f"manual-{uuid4()}"
+    dag_run = (context or {}).get("dag_run")
+    return execute_tracked_stage(
+        connect=connect,
+        pipeline_run_id=run_id,
+        task_name="build_bronze",
+        trigger_source="airflow" if dag_run is not None else "manual",
+        dag_run_id=str(dag_run.run_id) if dag_run is not None else None,
+        operation=lambda: _run(
+            pipeline_run_id=run_id,
+            context=context,
+            input_dir=input_dir,
+            batch_size=batch_size,
+        ),
+    )
 
 
 def main() -> None:

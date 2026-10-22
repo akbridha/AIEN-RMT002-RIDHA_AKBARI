@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from pipelines.ingestion.db import connect
+from pipelines.ingestion.run_tracking import ensure_pipeline_run, execute_tracked_stage
 
 log = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ def _record_results(
     )
 
 
-def run(
+def _run(
     pipeline_run_id: str | None = None,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -211,21 +212,11 @@ def run(
                 f"missing Ops tables {', '.join(table for table in missing_tables if table.startswith('ops.'))}. "
                 "Apply database/schemas/ops.sql first."
             )
-        connection.execute(
-            """
-            INSERT INTO ops.pipeline_runs (
-                pipeline_run_id, dag_run_id, status, trigger_source
-            )
-            VALUES (%s, %s, 'RUNNING', %s)
-            ON CONFLICT (pipeline_run_id) DO UPDATE SET
-                dag_run_id = COALESCE(EXCLUDED.dag_run_id, ops.pipeline_runs.dag_run_id),
-                status = 'RUNNING',
-                trigger_source = EXCLUDED.trigger_source,
-                started_at_utc = now(),
-                finished_at_utc = NULL,
-                error_message = NULL
-            """,
-            (run_id, dag_run_id, trigger_source),
+        ensure_pipeline_run(
+            connection,
+            run_id,
+            trigger_source=trigger_source,
+            dag_run_id=dag_run_id,
         )
 
         if not silver_tables_missing:
@@ -339,6 +330,23 @@ def run(
         raise RuntimeError(f"Silver quality gate failed for pipeline run {run_id}: {error_message}")
     log.info("Silver quality gate passed for run %s: %d checks", run_id, len(checks))
     return result
+
+
+def run(
+    pipeline_run_id: str | None = None,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run Silver checks and persist this stage's Ops status."""
+    run_id = pipeline_run_id or f"manual-{uuid4()}"
+    dag_run = (context or {}).get("dag_run")
+    return execute_tracked_stage(
+        connect=connect,
+        pipeline_run_id=run_id,
+        task_name="quality_gate",
+        trigger_source="airflow" if dag_run is not None else "manual",
+        dag_run_id=str(dag_run.run_id) if dag_run is not None else None,
+        operation=lambda: _run(pipeline_run_id=run_id, context=context),
+    )
 
 
 def main() -> None:

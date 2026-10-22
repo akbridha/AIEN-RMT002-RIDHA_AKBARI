@@ -40,7 +40,12 @@ def test_run_rebuilds_all_gold_tables_and_logs_progress(monkeypatch, caplog):
     assert {
         table: metrics["loaded"] for table, metrics in results["tables"].items()
     } == {table: 3 for table in build_gold.GOLD_TABLES}
-    assert [query for query, _ in connection.calls[:5]] == list(build_gold.DELETE_SQL)
+    delete_calls = [
+        query for query, _ in connection.calls if query in build_gold.DELETE_SQL
+    ]
+    assert delete_calls == list(build_gold.DELETE_SQL)
+    assert any("INSERT INTO ops.pipeline_runs" in query for query, _ in connection.calls)
+    assert any("INSERT INTO ops.pipeline_tasks" in query for query, _ in connection.calls)
     assert sum("INSERT INTO gold." in query for query, _ in connection.calls) == 5
     assert all(
         params == ("run-1",)

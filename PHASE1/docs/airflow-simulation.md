@@ -80,6 +80,12 @@ python -m pipelines.quality.quality_gate --pipeline-run-id <pipeline_run_id>
 Gunakan `pipeline_run_id` yang sama dengan tahap Silver. Koneksi database lokal
 mengikuti konfigurasi `LOCAL_DATABASE_URL` atau variabel `LOCAL_POSTGRES_*`.
 
+Untuk menjalankan pipeline lokal lengkap tanpa Airflow, gunakan
+`python -m pipelines.run_pipeline`. Runner meneruskan satu ID ke seluruh tahap,
+mencatat status run `SUCCESS`/`FAILED`, dan builder juga mencatat status tahap
+ke `ops.pipeline_tasks` saat dipanggil sendiri. Lihat bagian “Menjalankan
+pipeline lokal tanpa Airflow” di README untuk contoh opsi perintah.
+
 ## Catatan teknis
 
 - Metadata Airflow memakai SQLite di named volume `airflow_data` (cukup untuk

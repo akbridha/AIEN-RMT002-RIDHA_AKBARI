@@ -211,6 +211,32 @@ satu transaksi dan mencatat `pipeline_run_id` pada setiap baris. Saat ini
 menyimpan refund pada tingkat order, tanpa rincian produk atau kuantitas; hal
 ini juga dilaporkan sebagai keterbatasan pada log dan hasil run.
 
+### Menjalankan pipeline lokal tanpa Airflow
+
+Untuk menjalankan urutan lengkap secara manual, gunakan runner dari folder
+`PHASE1`. Runner menginisialisasi schema, membuat satu `pipeline_run_id`, lalu
+meneruskan ID tersebut ke validasi raw, Bronze, Silver, quality gate, dan Gold.
+Status keseluruhan `ops.pipeline_runs` menjadi `SUCCESS` hanya setelah Gold
+berhasil, atau `FAILED` jika salah satu tahap gagal.
+
+```powershell
+python -m pipelines.run_pipeline
+```
+
+ID dan folder data dapat diberikan secara eksplisit:
+
+```powershell
+python -m pipelines.run_pipeline --pipeline-run-id "manual-demo-001" --input "data/raw"
+```
+
+Masing-masing builder (`build_bronze`, `build_silver`, `build_gold`) juga
+mencatat run dan status tahap ke `ops.pipeline_runs` serta
+`ops.pipeline_tasks` ketika dijalankan langsung. Jika builder dijalankan satu
+per satu, berikan ID yang sama pada setiap perintah; status keseluruhan run
+tetap `RUNNING` karena hanya runner yang mengetahui kapan semua tahap selesai.
+Runner adalah pilihan yang disarankan untuk eksekusi manual end-to-end. DAG
+Airflow tetap menjadi mekanisme orkestrasi utama proyek.
+
 ## 8. Orkestrasi dengan Airflow
 
 Pipeline wajib diorkestrasi menggunakan Airflow. Buat DAG pada file

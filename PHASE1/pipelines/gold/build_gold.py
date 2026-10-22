@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from pipelines.ingestion.db import connect
+from pipelines.ingestion.run_tracking import execute_tracked_stage
 
 log = logging.getLogger(__name__)
 
@@ -616,7 +617,7 @@ BUILD_STATEMENTS = (
 )
 
 
-def run(
+def _run(
     pipeline_run_id: str | None = None,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -671,6 +672,23 @@ def run(
     )
     log.info("Gold build completed: %s", results)
     return results
+
+
+def run(
+    pipeline_run_id: str | None = None,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build Gold and persist the stage result to Ops."""
+    run_id = pipeline_run_id or f"manual-{uuid4()}"
+    dag_run = (context or {}).get("dag_run")
+    return execute_tracked_stage(
+        connect=connect,
+        pipeline_run_id=run_id,
+        task_name="build_gold",
+        trigger_source="airflow" if dag_run is not None else "manual",
+        dag_run_id=str(dag_run.run_id) if dag_run is not None else None,
+        operation=lambda: _run(pipeline_run_id=run_id, context=context),
+    )
 
 
 def main() -> None:
