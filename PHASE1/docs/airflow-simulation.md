@@ -77,8 +77,12 @@ diinisialisasi:
 python -m pipelines.quality.quality_gate --pipeline-run-id <pipeline_run_id>
 ```
 
-Gunakan `pipeline_run_id` yang sama dengan tahap Silver. Koneksi database lokal
-mengikuti konfigurasi `LOCAL_DATABASE_URL` atau variabel `LOCAL_POSTGRES_*`.
+Gunakan `pipeline_run_id` yang sama dengan tahap Silver. Jika opsi ID tidak
+diberikan, gate memilih run Silver terbaru yang berstatus sukses dan memiliki
+baris `orders` serta `order_items`. Jika tidak ada run yang cocok, gate
+memberikan pesan error dan menyarankan menjalankan pipeline lengkap atau
+memberikan ID secara eksplisit. Koneksi database lokal mengikuti konfigurasi
+`LOCAL_DATABASE_URL` atau variabel `LOCAL_POSTGRES_*`.
 
 Untuk menjalankan pipeline lokal lengkap tanpa Airflow, gunakan
 `python -m pipelines.run_pipeline`. Runner meneruskan satu ID ke seluruh tahap,

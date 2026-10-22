@@ -229,6 +229,19 @@ ID dan folder data dapat diberikan secara eksplisit:
 python -m pipelines.run_pipeline --pipeline-run-id "manual-demo-001" --input "data/raw"
 ```
 
+Jika menjalankan tahap Silver dan quality gate secara terpisah, gate dapat
+memilih run Silver sukses terbaru secara otomatis:
+
+```powershell
+python -m pipelines.quality.quality_gate
+```
+
+Untuk menghindari ambiguitas, Anda juga dapat meneruskan ID dari output Silver:
+
+```powershell
+python -m pipelines.quality.quality_gate --pipeline-run-id "manual-demo-001"
+```
+
 Masing-masing builder (`build_bronze`, `build_silver`, `build_gold`) juga
 mencatat run dan status tahap ke `ops.pipeline_runs` serta
 `ops.pipeline_tasks` ketika dijalankan langsung. Jika builder dijalankan satu

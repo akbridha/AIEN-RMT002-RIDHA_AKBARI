@@ -12,6 +12,26 @@ from pipelines.ingestion.run_tracking import ensure_pipeline_run, execute_tracke
 
 log = logging.getLogger(__name__)
 
+LATEST_SILVER_RUN_SQL = """
+SELECT task.pipeline_run_id
+FROM ops.pipeline_tasks AS task
+WHERE task.task_name = 'build_silver'
+  AND task.status = 'SUCCESS'
+  AND task.finished_at_utc IS NOT NULL
+  AND EXISTS (
+      SELECT 1
+      FROM silver.orders AS orders
+      WHERE orders.pipeline_run_id = task.pipeline_run_id
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM silver.order_items AS items
+      WHERE items.pipeline_run_id = task.pipeline_run_id
+  )
+ORDER BY task.finished_at_utc DESC, task.task_id DESC
+LIMIT 1
+"""
+
 REQUIRED_SILVER_TABLES = (
     "silver.orders",
     "silver.order_items",
@@ -95,6 +115,24 @@ REFERENCE_CHECKS = (
         "Inventory snapshots without a matching product",
     ),
 )
+
+
+def _latest_silver_run_id() -> str:
+    """Find the newest tracked successful Silver run that has gate inputs."""
+    with connect("local") as connection:
+        row = connection.execute(LATEST_SILVER_RUN_SQL).fetchone()
+    if row is None or not row[0]:
+        raise RuntimeError(
+            "No successful Silver run with orders and order_items was found. "
+            "Run `python -m pipelines.run_pipeline` for an end-to-end execution, "
+            "or pass the same --pipeline-run-id used by build_silver."
+        )
+    run_id = str(row[0])
+    log.info(
+        "No pipeline_run_id supplied; using latest successful Silver run %s",
+        run_id,
+    )
+    return run_id
 
 
 def _result(
@@ -337,7 +375,7 @@ def run(
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run Silver checks and persist this stage's Ops status."""
-    run_id = pipeline_run_id or f"manual-{uuid4()}"
+    run_id = pipeline_run_id or _latest_silver_run_id()
     dag_run = (context or {}).get("dag_run")
     return execute_tracked_stage(
         connect=connect,

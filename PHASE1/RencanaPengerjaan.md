@@ -125,6 +125,8 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
 
 Set-Location PHASE1
 
+uv run python -m pipelines.ingestion.initialize_database
+
 uv run python -m pipelines.bronze.build_bronze
 uv run python -m pipelines.silver.build_silver
 uv run python -m pipelines.gold.build_gold
@@ -195,6 +197,7 @@ database/schemas/silver.sql
 database/schemas/ops.sql
 pipelines/__init__.py
 pipelines/ingestion/db.py                ← wajib: tests meng-import dsn_from_environment dari sini
+
 pipelines/ingestion/initialize_database.py
 pipelines/bronze/build_bronze.py
 pipelines/silver/build_silver.sql (+ .py runner)

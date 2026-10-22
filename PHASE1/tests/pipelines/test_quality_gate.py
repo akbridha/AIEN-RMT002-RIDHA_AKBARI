@@ -45,6 +45,51 @@ class FakeConnection:
         return FakeCursor([])
 
 
+def test_latest_silver_run_resolves_to_successful_run_with_required_rows(monkeypatch):
+    class RunCursor:
+        def fetchone(self):
+            return ("silver-run-1",)
+
+    class RunConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+        def execute(self, query, params=()):
+            assert "task.task_name = 'build_silver'" in query
+            assert "task.status = 'SUCCESS'" in query
+            assert "silver.orders" in query
+            assert "silver.order_items" in query
+            return RunCursor()
+
+    monkeypatch.setattr(quality_gate, "connect", lambda target: RunConnection())
+
+    assert quality_gate._latest_silver_run_id() == "silver-run-1"
+
+
+def test_latest_silver_run_requires_a_successful_run(monkeypatch):
+    class RunCursor:
+        def fetchone(self):
+            return None
+
+    class RunConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+        def execute(self, query, params=()):
+            return RunCursor()
+
+    monkeypatch.setattr(quality_gate, "connect", lambda target: RunConnection())
+
+    with pytest.raises(RuntimeError, match="No successful Silver run"):
+        quality_gate._latest_silver_run_id()
+
+
 def test_quality_gate_persists_passed_checks(monkeypatch):
     connection = FakeConnection()
     monkeypatch.setattr(quality_gate, "connect", lambda target: connection)
