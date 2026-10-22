@@ -1,4 +1,4 @@
-"""Transform append-only Bronze records into validated, typed Silver tables."""
+"""Ubah data Bronze menjadi tabel Silver yang lebih rapi dan siap dipakai."""
 
 from __future__ import annotations
 
@@ -20,12 +20,14 @@ MAX_BATCH_SIZE = 5000
 
 
 def standardize_time_utc(value: Any) -> datetime | None:
-    """Parse a timestamp and return an aware UTC datetime; reject ambiguous local times."""
+    """Ubah waktu ke UTC; waktu tanpa informasi zona ditolak supaya tidak menebak."""
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
         parsed = value
     else:
+        # Python membaca format ISO seperti 2026-10-22T10:00:00+07:00.
+        # Akhiran Z berarti UTC, jadi ubah dulu ke bentuk yang dikenali Python.
         parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError(f"Timestamp must include a timezone: {value!r}")
@@ -33,7 +35,7 @@ def standardize_time_utc(value: Any) -> datetime | None:
 
 
 def standardize_uppercase(value: Any) -> str | None:
-    """Trim a text value and normalize it to uppercase; preserve nulls."""
+    """Rapikan teks lalu jadikan huruf besar; nilai kosong tetap dianggap kosong."""
     if value is None:
         return None
     normalized = str(value).strip()
@@ -41,6 +43,7 @@ def standardize_uppercase(value: Any) -> str | None:
 
 
 def _to_decimal(value: Any) -> Decimal | None:
+    # Decimal lebih cocok daripada float untuk harga dan nilai uang.
     if value is None or value == "":
         return None
     try:
@@ -56,6 +59,7 @@ def _to_integer(value: Any) -> int | None:
         number = Decimal(str(value))
     except (InvalidOperation, ValueError) as exc:
         raise ValueError(f"Expected an integer, got {value!r}") from exc
+    # Jangan diam-diam membulatkan quantity seperti 2.5 menjadi 2.
     if number != number.to_integral_value():
         raise ValueError(f"Expected an integer, got {value!r}")
     return int(number)
@@ -83,6 +87,8 @@ def _not_null(value: Any) -> bool:
 
 
 def _merge_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    # Event biasanya menyimpan detail di dalam objek "payload".
+    # Gabungkan supaya field event dan detailnya bisa dibaca dengan cara yang sama.
     nested = payload.get("payload")
     if isinstance(nested, dict):
         return {**payload, **nested}
@@ -94,16 +100,20 @@ def _copy_fields(
     field_map: dict[str, str],
     record: dict[str, Any],
 ) -> dict[str, Any]:
+    # field_map memasangkan nama kolom tujuan dengan nama field dari Bronze.
     result = {
         target: payload.get(source)
         for target, source in field_map.items()
     }
+    # Timestamp penerimaan event diambil dari metadata Bronze jika tidak ada di payload.
     if "ingested_at_utc" in result and result["ingested_at_utc"] is None:
         result["ingested_at_utc"] = record["ingested_at_utc"]
     return result
 
 
 class EntitySpec:
+    """Aturan satu jenis data: tabel tujuan, kolom, key, tipe, dan referensinya."""
+
     def __init__(
         self,
         table: str,
@@ -144,6 +154,7 @@ def _spec(
     references: dict[str, str] | None = None,
     source_fields: dict[str, str] | None = None,
 ) -> EntitySpec:
+    # Kalau nama field sumber dan tujuan sama, pemetaan bisa dibuat otomatis.
     return EntitySpec(
         table,
         source_fields or {field: field for field in fields},
@@ -158,7 +169,11 @@ def _spec(
     )
 
 
+# Daftar aturan untuk setiap jenis data Bronze.
+# Urutannya penting: tabel referensi seperti customers dan products diproses
+# sebelum tabel yang membutuhkan referensi tersebut, seperti orders dan events.
 ENTITY_SPECS = {
+    # Data acuan dan data operasional utama.
     "city_reference": _spec(
         "cities",
         ("city_id", "city_name", "country"),
@@ -234,6 +249,7 @@ ENTITY_SPECS = {
         decimals=("discount_rate",),
         uppercase=("promotion_type",),
     ),
+    # Order diproses sebelum item dan event agar foreign key bisa diperiksa.
     "orders": _spec(
         "orders",
         (
@@ -292,6 +308,7 @@ ENTITY_SPECS = {
         decimals=("discount_amount",),
         references={"order_id": "orders.order_id", "promotion_id": "promotions.promotion_id"},
     ),
+    # Event punya event_id sebagai identitas unik dan waktu kejadian/penerimaan.
     "payment_events": _spec(
         "payment_events",
         (
@@ -380,6 +397,7 @@ ENTITY_SPECS = {
             "order_id": "orders.order_id",
         },
     ),
+    # Snapshot stok dan biaya campaign berasal dari file CSV.
     "inventory_snapshots": _spec(
         "inventory_snapshots",
         (
@@ -408,6 +426,7 @@ ENTITY_SPECS = {
     ),
 }
 
+# Daftar referensi yang dibaca dari Silver untuk mengecek apakah ID terkait ada.
 REFERENCE_QUERIES = {
     "cities.city_id": ("silver.cities", "city_id"),
     "customers.customer_id": ("silver.customers", "customer_id"),
@@ -420,8 +439,10 @@ REFERENCE_QUERIES = {
 
 
 def _normalize_record(record: dict[str, Any], spec: EntitySpec) -> dict[str, Any]:
+    # Mulai dari payload asli, lalu ambil field yang diperlukan untuk tabel tujuan.
     payload = _merge_payload(record["payload"])
     values = _copy_fields(payload, spec.field_map, record)
+    # Konversi tipe data sesuai aturan entity, sebelum disimpan ke PostgreSQL.
     for field in spec.timestamps:
         values[field] = standardize_time_utc(values[field])
     for field in spec.dates:
@@ -435,6 +456,7 @@ def _normalize_record(record: dict[str, Any], spec: EntitySpec) -> dict[str, Any
     for field in values:
         if field not in spec.timestamps and field not in spec.dates and field not in spec.decimals and field not in spec.integers:
             values[field] = _text(values[field])
+    # Kolom wajib yang tidak ada membuat record ditolak, bukan disimpan setengah lengkap.
     missing = [field for field in spec.required if not _not_null(values[field])]
     if missing:
         raise ValueError(f"Missing required field(s): {', '.join(missing)}")
@@ -448,6 +470,7 @@ def _normalize_record(record: dict[str, Any], spec: EntitySpec) -> dict[str, Any
 
 
 def _load_reference_values(connection: Any) -> dict[str, set[Any]]:
+    # Simpan ID yang sudah ada dalam set agar pengecekan "apakah ID ada?" cepat.
     references: dict[str, set[Any]] = {}
     for reference, (table, column) in REFERENCE_QUERIES.items():
         rows = connection.execute(f"SELECT {column} FROM {table}").fetchall()
@@ -456,6 +479,7 @@ def _load_reference_values(connection: Any) -> dict[str, set[Any]]:
 
 
 def _validate_batch_size(batch_size: int) -> None:
+    # Batas ini mencegah satu query insert menjadi terlalu besar.
     if isinstance(batch_size, bool) or not isinstance(batch_size, int):
         raise ValueError("batch_size must be an integer.")
     if not 1 <= batch_size <= MAX_BATCH_SIZE:
@@ -474,6 +498,7 @@ def _insert_rows(
     if not rows:
         return 0
     inserted_count = 0
+    # Pecah insert menjadi beberapa query kecil, bukan satu query raksasa.
     for start in range(0, len(rows), batch_size):
         batch = rows[start : start + batch_size]
         insert_columns = [*columns, "bronze_record_id", "pipeline_run_id"]
@@ -482,6 +507,7 @@ def _insert_rows(
         conflict_columns = ", ".join(keys)
         updates = [column for column in insert_columns if column not in keys]
         update_clause = ", ".join(f"{column} = EXCLUDED.{column}" for column in updates)
+        # Kalau key sudah ada, perbarui kolom lain agar eksekusi ulang tetap aman.
         sql = (
             f"INSERT INTO silver.{table} ({', '.join(insert_columns)}) "
             f"VALUES {values_clause} ON CONFLICT ({conflict_columns}) "
@@ -510,8 +536,11 @@ def _insert_rejections(
     if not rejections:
         return 0
     inserted = 0
+    # Rejection juga ditulis per batch, sama seperti baris Silver yang diterima.
     for start in range(0, len(rejections), batch_size):
         batch = rejections[start : start + batch_size]
+        # Tipe parameter ditulis eksplisit; BIGINT penting agar ID Bronze
+        # tidak terbaca sebagai TEXT saat dibandingkan dengan kolom database.
         placeholder = (
             "(%s::TEXT, %s::TEXT, %s::BIGINT, %s::TEXT, %s::TEXT, "
             "%s::JSONB, %s::TEXT, %s::BIGINT, %s::TEXT)"
@@ -545,6 +574,7 @@ def _insert_rejections(
                 payload, rejected_stage, bronze_record_id, pipeline_run_id
             )
             WHERE NOT EXISTS (
+                -- Rejection yang sama sudah pernah dicatat? Jangan tambahkan lagi.
                 SELECT 1 FROM silver.rejected_records existing
                 WHERE existing.bronze_record_id = v.bronze_record_id
                   AND existing.rejected_stage = v.rejected_stage
@@ -565,6 +595,7 @@ def _reject(
     reason_code: str,
     detail: str,
 ) -> dict[str, Any]:
+    # Simpan bukti asal record dan penjelasan supaya data yang ditolak bisa ditelusuri.
     return {
         "entity": entity,
         "source_file": record["source_file"],
@@ -579,7 +610,10 @@ def _reject(
 
 def _winner_order(spec: EntitySpec, record: dict[str, Any], values: dict[str, Any]) -> tuple[Any, ...]:
     if spec.table == "orders":
+        # Untuk order, pilih versi yang paling baru diubah; kalau waktunya sama,
+        # record Bronze dengan ID lebih besar menjadi penentu.
         return (values.get("updated_at_utc") or datetime.min.replace(tzinfo=UTC), record["record_id"])
+    # Untuk entity lain, record Bronze yang masuk lebih dulu menjadi pemenang.
     return (-record["record_id"],)
 
 
@@ -591,6 +625,8 @@ def run(
     """Build Silver from Bronze using ``batch_size`` rows per insert statement."""
     del context
     _validate_batch_size(batch_size)
+    # ID ini menandai satu kali eksekusi. Airflow bisa mengirim ID sendiri;
+    # kalau dijalankan manual, buat ID unik otomatis.
     run_id = pipeline_run_id or f"manual-{uuid4()}"
     results: dict[str, Any] = {
         "pipeline_run_id": run_id,
@@ -603,6 +639,8 @@ def run(
     with connect("local") as connection:
         entities = tuple(ENTITY_SPECS)
         placeholders = ", ".join(["%s"] * len(entities))
+        # Silver selalu membaca Bronze, bukan membuka kembali file raw.
+        # Hasil query saat ini diambil sekaligus, lalu dikelompokkan per entity.
         source_rows = connection.execute(
             f"""
                 SELECT record_id, entity, source_file, source_row_number,
@@ -636,6 +674,8 @@ def run(
         references = _load_reference_values(connection)
         rejections: list[dict[str, Any]] = []
 
+        # Jalankan aturan satu per satu; urutan ENTITY_SPECS memastikan
+        # tabel acuan siap lebih dulu sebelum foreign key-nya diperiksa.
         for entity_number, (entity, spec) in enumerate(ENTITY_SPECS.items(), start=1):
             entity_records = by_entity[entity]
             log.info(
@@ -652,6 +692,7 @@ def run(
                 try:
                     values = _normalize_record(record, spec)
                 except (ValueError, TypeError, InvalidOperation) as exc:
+                    # Catat kesalahan parsing/validasi, lalu lanjut ke record berikutnya.
                     code = "INVALID_TIMESTAMP" if any(
                         field in str(exc).lower() for field in ("timestamp", "isoformat")
                     ) else "NEGATIVE_QTY" if "quantity must be positive" in str(exc) else "INVALID_VALUE"
@@ -688,6 +729,7 @@ def run(
                     continue
                 candidates.append((record, values))
 
+            # Kumpulkan record dengan key yang sama untuk memilih satu pemenang.
             grouped: dict[tuple[Any, ...], list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
             for record, values in candidates:
                 grouped[tuple(values[key] for key in spec.keys)].append((record, values))
@@ -698,6 +740,7 @@ def run(
                 selected.append(winner)
                 for duplicate_record, _ in group:
                     if duplicate_record["record_id"] != winner[0]["record_id"]:
+                        # Duplikat tetap ada di Bronze, tetapi alasannya dicatat di Silver.
                         rejections.append(
                             _reject(
                                 duplicate_record,
@@ -756,16 +799,19 @@ def run(
                 None,
             )
             if reference and spec.table in {"cities", "customers", "products", "stores", "sales_channels", "promotions", "orders"}:
+                # Record yang baru diproses juga bisa menjadi acuan bagi entity berikutnya.
                 for _, values in selected:
                     value = values.get(spec.keys[0])
                     if value is not None:
                         references[reference].add(value)
             if spec.table == "sales_channels":
+                # Order menyimpan nama channel, jadi simpan nama itu juga untuk validasi.
                 references["sales_channels.channel_name"].update(
                     values["channel_name"] for _, values in selected if values["channel_name"] is not None
                 )
 
         results["rows_rejected"] = len(rejections)
+        # Simpan daftar penolakan setelah semua entity selesai diproses.
         log.info(
             "Writing %d rejected Silver records in batches of %d",
             len(rejections),
@@ -783,6 +829,7 @@ def run(
 
 
 def main() -> None:
+    # Opsi ini membuat script bisa dijalankan langsung dari terminal.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pipeline-run-id")
     parser.add_argument(
@@ -792,6 +839,7 @@ def main() -> None:
         help=f"Rows per Silver insert batch (default: {DEFAULT_BATCH_SIZE}; max: {MAX_BATCH_SIZE}).",
     )
     args = parser.parse_args()
+    # Tampilkan pesan INFO di terminal, termasuk progres per entity.
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     run(pipeline_run_id=args.pipeline_run_id, batch_size=args.batch_size)
 

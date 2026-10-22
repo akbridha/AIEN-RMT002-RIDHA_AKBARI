@@ -127,6 +127,19 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
 
 
 
+| Tantangan | Mekanisme yang menangani | Cakupan saat ini |
+|---|---|---|
+| Duplicate order | Silver mengelompokkan berdasarkan `order_id`, memilih record dengan `updated_at_utc` terbaru, lalu `bronze_record_id` terbesar sebagai pemecah seri. Record duplikat dicatat di `silver.rejected_records`. | Ditangani di Silver. |
+| Duplicate event | Tabel event memakai `event_id` sebagai key. Jika ada duplikat, Silver memilih `bronze_record_id` terkecil dan mencatat sisanya sebagai rejection. | Ditangani di Silver. |
+| Split payment dan partial refund | Silver mempertahankan setiap payment/refund sebagai baris event terpisah dengan `event_id`, `order_id`, waktu, dan `amount`. Gold harus menjumlahkan event yang relevan per order; jangan menganggap satu event selalu mewakili pembayaran atau refund penuh. | Event disimpan di Silver; agregasi dan rekonsiliasi harus dilakukan di Gold. |
+| Event terlambat dan timestamp tidak berurutan | Bronze menyimpan waktu kejadian dan waktu ingest. Silver membaca ulang seluruh `bronze.source_records` setiap eksekusi dan menyimpan keduanya pada tabel event, sehingga event yang baru masuk ke Bronze dapat ditemukan saat Silver dijalankan ulang. Analisis urutan kejadian di Gold harus menggunakan `occurred_at_utc`, bukan urutan ingest atau ID record. | Data pendukung tersedia di Silver; belum ada pemrosesan incremental atau rekonstruksi state event khusus. |
+| Timestamp dengan timezone berbeda | `standardize_time_utc()` mengonversi timestamp yang memiliki timezone ke UTC. Timestamp tanpa timezone ditolak karena zona waktunya tidak bisa ditebak dengan aman. | Ditangani di Silver; timestamp tanpa zona dicatat sebagai record invalid. |
+| Missing reference ke customer, product, atau order | Silver memeriksa ID referensi terhadap tabel Silver terkait. Referensi yang tidak ditemukan menghasilkan rejection dengan kode `MISSING_FK`, bukan membuat entitas pengganti. | Ditangani di Silver untuk referensi yang dikonfigurasi pada `ENTITY_SPECS`. |
+| Negative quantity | Silver memeriksa `order_items.quantity`; nilai nol atau negatif ditolak dengan kode `NEGATIVE_QTY`. Bronze tetap mempertahankan payload sumbernya. | Ditangani di Silver. |
+| Perubahan profil customer dan kategori product | Silver menyimpan `customer_profiles` dan `product_categories` dengan `valid_from_utc` serta `valid_to_utc`, dan key yang mencakup waktu mulai berlaku. Gold harus memilih versi yang berlaku pada tanggal transaksi/aktivitas. | Riwayat versi tersimpan di Silver; pemilihan versi berdasarkan waktu transaksi dan pemeriksaan periode tumpang tindih masih harus diterapkan. |
+| Order dibatalkan tetapi payment sudah captured | Silver menyimpan status order dan payment event secara terpisah; event payment tidak dihapus hanya karena status order `CANCELLED`. Gold harus menghitung payment berdasarkan event captured dan menerapkan definisi metric yang sesuai, bukan menyimpulkan bahwa order batal berarti tidak ada payment. | Pemisahan data tersedia di Silver; aturan rekonsiliasi order/payment harus diterapkan di Gold. |
+| Inventory snapshot yang hilang | Silver hanya menyimpan snapshot yang benar-benar tersedia; baris snapshot yang hilang tidak dibuat otomatis. Gold perlu mempertahankan baris produk/tanggal yang relevan dan membedakan nilai inventory `NULL` (tidak ada snapshot) dari `0` (snapshot ada, stok kosong). | Belum diisi atau disimpulkan oleh Silver; penanganan cakupan dan metric dilakukan di Gold. |
+| Banyak promotion/campaign yang berpotensi menggandakan fact | Silver mempertahankan grain relasi promotion per `(order_id, promotion_id)` dan spend per `(spend_date, campaign_id, channel)`. Gold harus mengagregasi fact pada grain yang sesuai sebelum join ke promotion, campaign, inventory, atau event. | Grain sumber tersedia di Silver; pencegahan fact multiplication wajib diterapkan dan diuji di Gold. |
 
 
 
