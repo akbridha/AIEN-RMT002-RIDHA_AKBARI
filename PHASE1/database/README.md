@@ -38,3 +38,10 @@ The student files are `pipelines/bronze/build_bronze.py`,
 Instructor schema contracts and reference builds are kept under `solution/`
 and are not part of the participant package. Instructors can run the hidden
 reference with `--bronze reference --silver reference --gold reference`.
+
+<!-- 
+The pipeline builders are `pipelines/bronze/build_bronze.py`,
+`pipelines/silver/build_silver.py`, and `pipelines/gold/build_gold.py`.
+Instructor schema contracts and reference builds are kept under `solution/`
+and are not part of the participant package. Instructors can run the hidden
+reference with `--bronze reference --silver reference --gold reference`. -->

@@ -205,6 +205,12 @@ Gold membaca Silver, bukan file mentah secara langsung. Bangun fact dan
 aggregate secara terpisah sebelum melakukan join ke promotion, campaign,
 inventory, atau event agar tidak terjadi penggandaan nilai.
 
+Builder `pipelines/gold/build_gold.py` membangun ulang lima tabel Gold dalam
+satu transaksi dan mencatat `pipeline_run_id` pada setiap baris. Saat ini
+`product_daily.refunded_units` bernilai `0` karena skema Silver hanya
+menyimpan refund pada tingkat order, tanpa rincian produk atau kuantitas; hal
+ini juga dilaporkan sebagai keterbatasan pada log dan hasil run.
+
 ## 8. Orkestrasi dengan Airflow
 
 Pipeline wajib diorkestrasi menggunakan Airflow. Buat DAG pada file
