@@ -66,49 +66,6 @@ def _source_relative_path(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _resolve_manifest_file(root: Path, relative_path: str) -> Path:
-    candidate = (root / relative_path).resolve()
-    if not candidate.is_relative_to(root.resolve()):
-        raise ValueError(f"Manifest path escapes the raw data directory: {relative_path}")
-    return candidate
-
-
-def _load_and_validate_manifest(
-    root: Path, source_files: list[Path], require_manifest: bool
-) -> dict[str, str]:
-    manifest_path = root / "manifest.json"
-    if not manifest_path.is_file():
-        if require_manifest:
-            raise FileNotFoundError(f"Required manifest not found: {manifest_path}")
-        log.warning("manifest.json is missing; source checksum validation was skipped.")
-        return {}
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    files = manifest.get("files") if isinstance(manifest, dict) else None
-    if not isinstance(files, dict) or not files:
-        raise ValueError("manifest.json must contain a non-empty 'files' object.")
-
-    expected_files: dict[str, str] = {}
-    for relative_path, expected_checksum in files.items():
-        if not isinstance(relative_path, str) or not isinstance(expected_checksum, str):
-            raise ValueError("Manifest file entries must map relative paths to SHA-256 strings.")
-        candidate = _resolve_manifest_file(root, relative_path)
-        if not candidate.is_file():
-            raise FileNotFoundError(f"Manifest file is missing: {relative_path}")
-        actual_checksum = _sha256_file(candidate)
-        if actual_checksum.lower() != expected_checksum.lower():
-            raise ValueError(f"SHA-256 mismatch for raw file: {relative_path}")
-        expected_files[relative_path.replace("\\", "/")] = expected_checksum.lower()
-
-    discovered = {_source_relative_path(path, root) for path in source_files}
-    unlisted = sorted(discovered - expected_files.keys())
-    if unlisted:
-        raise ValueError(
-            "Raw source file(s) are not listed in manifest.json: " + ", ".join(unlisted)
-        )
-    return expected_files
-
-
 def _iter_json_records(path: Path) -> Iterator[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as file_stream:
         content = json.load(file_stream)
@@ -191,7 +148,6 @@ def _record_file_ingestion(
     file_format: str,
     file_size_bytes: int,
     file_checksum: str,
-    manifest_checksum: str | None,
     row_count: int,
     pipeline_run_id: str,
 ) -> None:
@@ -202,16 +158,14 @@ def _record_file_ingestion(
             file_format,
             file_size_bytes,
             file_checksum,
-            manifest_checksum,
             row_count,
             pipeline_run_id
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (source_file, pipeline_run_id) DO UPDATE SET
             file_format = EXCLUDED.file_format,
             file_size_bytes = EXCLUDED.file_size_bytes,
             file_checksum = EXCLUDED.file_checksum,
-            manifest_checksum = EXCLUDED.manifest_checksum,
             row_count = EXCLUDED.row_count
         """,
         (
@@ -219,7 +173,6 @@ def _record_file_ingestion(
             file_format,
             file_size_bytes,
             file_checksum,
-            manifest_checksum,
             row_count,
             pipeline_run_id,
         ),
@@ -231,7 +184,6 @@ def run(
     context: dict[str, Any] | None = None,
     input_dir: Path | str = DEFAULT_INPUT_DIR,
     batch_size: int = 500,
-    require_manifest: bool = True,
 ) -> dict[str, Any]:
     """Load all JSON/CSV files below ``input_dir`` into local Bronze.
 
@@ -259,7 +211,6 @@ def run(
     if not source_files:
         raise FileNotFoundError(f"No JSON or CSV source files found under {raw_root}")
 
-    manifest_files = _load_and_validate_manifest(raw_root, source_files, require_manifest)
     run_id = pipeline_run_id or f"manual-{uuid4()}"
     totals = {
         "pipeline_run_id": run_id,
@@ -273,10 +224,6 @@ def run(
         for path in source_files:
             source_file = _source_relative_path(path, raw_root)
             file_checksum = _sha256_file(path)
-            expected_checksum = manifest_files.get(source_file)
-            if expected_checksum and expected_checksum != file_checksum.lower():
-                raise ValueError(f"SHA-256 mismatch for raw file: {source_file}")
-
             prior_checksums = _existing_file_checksums(connection, source_file)
             changed_checksums = prior_checksums - {file_checksum}
             if changed_checksums:
@@ -323,7 +270,6 @@ def run(
                 file_format=path.suffix.lower().lstrip("."),
                 file_size_bytes=path.stat().st_size,
                 file_checksum=file_checksum,
-                manifest_checksum=expected_checksum,
                 row_count=file_rows_read,
                 pipeline_run_id=run_id,
             )
@@ -347,11 +293,6 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT_DIR)
     parser.add_argument("--pipeline-run-id")
     parser.add_argument("--batch-size", type=int, default=500)
-    parser.add_argument(
-        "--allow-missing-manifest",
-        action="store_true",
-        help="Allow local/manual ingestion when manifest.json is absent.",
-    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -359,7 +300,6 @@ def main() -> None:
         pipeline_run_id=args.pipeline_run_id,
         input_dir=args.input,
         batch_size=args.batch_size,
-        require_manifest=not args.allow_missing_manifest,
     )
     log.info("Bronze load completed: %s", result)
 

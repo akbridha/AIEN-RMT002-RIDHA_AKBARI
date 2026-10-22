@@ -4,7 +4,8 @@ Konfigurasi ini menjalankan Airflow 2.10.4 di Docker untuk **mensimulasikan**
 seluruh tahap pipeline milestone P1M1 **tanpa operasi ingestion/build/transform
 nyata**: tidak ada koneksi database, tidak ada baris yang dimuat, tidak ada
 tabel yang ditulis. Setiap task hanya menulis log simulasi dan pemeriksaan
-file read-only (keberadaan `manifest.json`, file skema `database/schemas/*.sql`).
+file read-only (daftar file JSON/CSV dan file skema `database/schemas/*.sql`).
+`manifest.json`, jika ada, diabaikan.
 
 ## Menjalankan
 
@@ -20,7 +21,7 @@ Buka **http://localhost:8081** → login `airflow` / `airflow`
 
 1. Buka DAG `milestone1_omnichannel_pipeline` (langsung unpaused, schedule manual).
 2. Klik **Trigger DAG** — tujuh tahap berjalan berurutan:
-   `validate_manifest_and_raw → initialize_postgres_schemas → load_bronze →
+   `validate_raw_files → initialize_postgres_schemas → load_bronze →
    build_silver → quality_gate → build_gold → validate_gold_and_record_metadata`.
 3. Klik task → **Log** untuk melihat output `[SIMULASI] ...` beserta
    `pipeline_run_id` yang diteruskan antar tahap.
@@ -50,7 +51,7 @@ Set `PIPELINE_MODE=real` di environment compose (mis. di `.env`), lalu
 
 | Tahap | Modul |
 |---|---|
-| validate_manifest_and_raw | `pipelines.ingestion.validate_manifest:run` |
+| validate_raw_files | `pipelines.ingestion.validate_raw_files:run` |
 | initialize_postgres_schemas | `pipelines.ingestion.initialize_database:run` |
 | load_bronze | `pipelines.bronze.build_bronze:run` |
 | build_silver | `pipelines.silver.build_silver:run` |

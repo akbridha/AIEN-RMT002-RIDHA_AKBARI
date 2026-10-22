@@ -80,22 +80,21 @@ tahap berikutnya.
 
 ### Yang dikerjakan
 
-Unduh seluruh isi data lake ke `data/raw/`. Struktur yang diminta README
-memiliki `manifest.json` dan subfolder `operational/`, `events/`, `inventory/`,
-serta `reference/`.
+Unduh file sumber ke `data/raw/`. Struktur folder yang diminta README berisi
+subfolder `operational/`, `events/`, `inventory/`, dan `reference/`.
+`manifest.json`, jika ikut terunduh, diabaikan oleh pipeline.
 
 Periksa:
 
-- Semua file yang disebut manifest tersedia.
+- Semua file sumber yang diwajibkan README tersedia.
 - File berada di folder yang benar.
 - File bisa dibaca sebagai JSON atau CSV.
-- Ukuran atau checksum file sesuai dengan manifest, bila informasinya ada.
+- Loader menghitung checksum SHA-256 dan jumlah record secara langsung.
 
 ### Hasil yang harus terlihat
 
 ```text
 data/raw/
-├── manifest.json
 ├── operational/
 ├── events/
 ├── inventory/
@@ -108,7 +107,8 @@ Pada tahap ini data masih berupa file. Belum ada data yang dimuat ke PostgreSQL.
 
 - Menganggap unduhan selesai hanya karena beberapa file terlihat.
 - Mengubah file raw sebelum memasukkannya ke Bronze.
-- Meletakkan `manifest.json` di dalam subfolder, bukan di root `data/raw/`.
+- Menganggap `manifest.json` sebagai validasi kelengkapan. Pipeline tidak
+  membacanya; kelengkapan perlu dicek dengan daftar sumber yang diwajibkan.
 
 ## 5. Langkah 2 — Rancang schema dan tabel
 
@@ -232,8 +232,8 @@ Contoh yang disimpan di Bronze:
 | `pipeline_run_id` | ID run Airflow atau run lokal |
 
 Untuk CSV, satu baris CSV menjadi satu record/payload. Untuk JSON, satu objek
-di dalam file menjadi satu record. Loader juga mencatat checksum dan jumlah
-record file agar bisa dibandingkan dengan manifest.
+di dalam file menjadi satu record. Loader juga menghitung checksum dan jumlah
+record file, tanpa membaca manifest.
 
 ### Aturan penting
 
@@ -253,8 +253,8 @@ record file agar bisa dibandingkan dengan manifest.
 ### Hasil yang harus terlihat
 
 - Semua file yang diharapkan tercatat di `bronze.ingestion_files`.
-- Jumlah record di Bronze dapat direkonsiliasi dengan jumlah dari file/
-  manifest.
+- Jumlah record di Bronze dapat direkonsiliasi dengan jumlah record yang
+  dihitung langsung dari setiap file.
 - Record Bronze dapat ditelusuri ke file dan posisi sumbernya.
 - Rerun file yang sama tidak menambah duplikat yang tidak diinginkan.
 
@@ -429,7 +429,7 @@ Gold, dan validasi akhir.
 Urutan yang diminta:
 
 ```text
-validasi manifest dan raw files
+validasi raw files (manifest diabaikan)
         -> inisialisasi PostgreSQL schemas
         -> load Bronze
         -> build Silver
@@ -472,7 +472,7 @@ Jangan menunggu sampai semua kode selesai untuk mulai menguji.
 
 Urutan uji yang aman:
 
-1. Jalankan pemeriksaan manifest dan file raw.
+1. Jalankan pemeriksaan keberadaan dan keterbacaan file raw.
 2. Jalankan inisialisasi schema; pastikan tabel muncul.
 3. Muat satu file kecil ke Bronze; cocokkan payload dan lineage dengan file.
 4. Jalankan loader lagi; pastikan tidak muncul duplikasi yang tidak diinginkan.
@@ -527,10 +527,10 @@ berguna daripada banyak file kode yang belum pernah diuji.
 
 ## 15. Checklist selesai
 
-- [V] Semua file raw sesuai manifest tersedia.
-- [ ] PostgreSQL lokal bisa diakses pipeline.
-- [ ] Schema Bronze, Silver, dan Ops dibuat; Gold contract tetap kompatibel.
-- [ ] Bronze menyimpan payload dan lineage serta aman untuk rerun.
+- [V] Semua file raw yang diwajibkan tersedia dan dapat dibaca.
+- [V] PostgreSQL lokal bisa diakses pipeline.
+- [V] Schema Bronze, Silver, dan Ops dibuat; Gold contract tetap kompatibel.
+- [V] Bronze menyimpan payload dan lineage serta aman untuk rerun. bagaimana cara buktikan
 - [ ] Silver bertipe, dinormalisasi, dideduplikasi, dan mencatat penolakan.
 - [ ] Kelima tabel Gold terisi dengan grain dan metrik yang sesuai kontrak.
 - [ ] Quality checks benar-benar memeriksa data dan menghentikan alur bila gagal.
@@ -554,5 +554,7 @@ berguna daripada banyak file kode yang belum pernah diuji.
 database diinisiasi dengan
 `uv run python -m pipelines.ingestion.initialize_database`
 
-  RUN LOADER BRONZE karena manifest ditiadakan 
-  `uv run python -m pipelines.bronze.build_bronze --input data/raw --allow-missing-manifest`
+  RUN LOADER BRONZE 
+  `uv run python -m pipelines.bronze.build_bronze --input data/raw`
+
+  belum dilakukan testing test_contract.py.

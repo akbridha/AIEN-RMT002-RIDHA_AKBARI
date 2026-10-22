@@ -1,14 +1,14 @@
 """DAG utama milestone P1M1 — orkestrasi 7 tahap sesuai kontrak README §8.
 
 Urutan wajib:
-    validate manifest dan raw files -> initialize PostgreSQL schemas
+    validate raw files -> initialize PostgreSQL schemas
         -> load Bronze -> build Silver -> quality gate (gagal -> berhenti)
         -> build Gold -> validate Gold dan record pipeline metadata
 
 Mode operasi dikontrol oleh environment variable ``PIPELINE_MODE``:
 
 * ``simulate`` (default) — setiap tahap HANYA mencatat log simulasi dan
-  pemeriksaan file read-only (manifest/schema). Tidak ada koneksi database
+  pemeriksaan file read-only (raw/schema). Tidak ada koneksi database
   dan tidak ada operasi ingestion/build/transform nyata. Tujuannya agar
   dependency, rerun, dan perilaku quality gate bisa didemokan lebih dulu.
 * ``real`` — setiap tahap memanggil modul pipeline yang sesuai
@@ -22,7 +22,6 @@ mendemonstrasikan quality gate yang menghentikan tahap Gold.
 from __future__ import annotations
 
 import importlib
-import json
 import logging
 import os
 import time
@@ -52,7 +51,7 @@ SCHEMA_FILES = ("bronze.sql", "silver.sql", "gold.sql", "ops.sql")
 
 # Peta tahap -> modul pipeline yang dipanggil pada PIPELINE_MODE=real.
 REAL_STAGE_TARGETS = {
-    "validate_manifest_and_raw": ("pipelines.ingestion.validate_manifest", "run"),
+    "validate_raw_files": ("pipelines.ingestion.validate_raw_files", "run"),
     "initialize_postgres_schemas": ("pipelines.ingestion.initialize_database", "run"),
     "load_bronze": ("pipelines.bronze.build_bronze", "run"),
     "build_silver": ("pipelines.silver.build_silver", "run"),
@@ -108,13 +107,6 @@ def _simulate(stage: str, notes: list[str], context: dict[str, Any], pause: floa
     }
 
 
-def _read_manifest() -> dict[str, Any] | None:
-    manifest_path = RAW_DATA_DIR / "manifest.json"
-    if not manifest_path.exists():
-        return None
-    return json.loads(manifest_path.read_text(encoding="utf-8"))
-
-
 def _dispatch(stage: str, simulate_notes: list[str], context: dict[str, Any]) -> dict[str, Any]:
     if PIPELINE_MODE == "real":
         return _execute_real(stage, context)
@@ -122,27 +114,26 @@ def _dispatch(stage: str, simulate_notes: list[str], context: dict[str, Any]) ->
 
 
 
-# --- Tahap 1: validasi manifest dan raw files -------------------------------
+# --- Tahap 1: validasi raw files --------------------------------------------
 
 
-def validate_manifest_and_raw(**context: Any) -> dict[str, Any]:
-    manifest = _read_manifest()
-    if manifest is not None:
-        counts = manifest.get("record_counts", {})
-        total_rows = sum(counts.values()) if isinstance(counts, dict) else 0
-        notes = [
-            f"manifest.json ditemukan: {len(manifest.get('files', {}))} file terdaftar",
-            f"rentang tanggal {manifest.get('start_date')} s/d {manifest.get('end_date')}",
-            f"total baris pada manifest: {total_rows}",
-            "checksum SHA-256 tiap file akan diverifikasi pada mode real",
-        ]
-    else:
-        notes = [
-            f"manifest.json BELUM ada di {RAW_DATA_DIR} "
-            "(unduh dataset Google Drive ke data/raw/)",
-            "mode simulasi tetap lanjut; mode real akan menggagalkan tahap ini",
-        ]
-    return _dispatch("validate_manifest_and_raw", notes, context)
+def validate_raw_files(**context: Any) -> dict[str, Any]:
+    source_files = [
+        path
+        for path in RAW_DATA_DIR.rglob("*")
+        if path.is_file()
+        and path.name != "manifest.json"
+        and path.suffix.lower() in {".json", ".csv"}
+    ] if RAW_DATA_DIR.is_dir() else []
+    notes = [
+        f"folder raw: {RAW_DATA_DIR}",
+        f"file JSON/CSV ditemukan: {len(source_files)}",
+        "manifest.json diabaikan; mode real memeriksa struktur dan kemampuan parsing file",
+        "mode simulasi hanya memeriksa daftar file, tanpa parsing atau koneksi database",
+    ]
+    if PIPELINE_MODE == "simulate" and not source_files:
+        notes.append("belum ada file sumber yang ditemukan")
+    return _dispatch("validate_raw_files", notes, context)
 
 
 # --- Tahap 2: inisialisasi skema PostgreSQL ---------------------------------
@@ -167,21 +158,20 @@ def initialize_postgres_schemas(**context: Any) -> dict[str, Any]:
 
 
 def load_bronze(**context: Any) -> dict[str, Any]:
-    manifest = _read_manifest()
-    if manifest and isinstance(manifest.get("record_counts"), dict):
-        counts = manifest["record_counts"]
-        total = sum(counts.values())
-        notes = [
-            f"{len(counts)} sumber data, total ±{total} baris",
-            "target: bronze.source_records (payload JSONB utuh + lineage)",
-            "append-only dan idempotent via pipeline_run_id",
-            "mode simulasi: tidak ada baris yang benar-benar dimuat",
-        ]
-    else:
-        notes = [
-            "manifest tidak tersedia — daftar sumber dibaca dari struktur data/raw/",
-            "mode simulasi: tidak ada baris yang benar-benar dimuat",
-        ]
+    source_files = [
+        path
+        for path in RAW_DATA_DIR.rglob("*")
+        if path.is_file()
+        and path.name != "manifest.json"
+        and path.suffix.lower() in {".json", ".csv"}
+    ] if RAW_DATA_DIR.is_dir() else []
+    notes = [
+        f"{len(source_files)} file JSON/CSV ditemukan di {RAW_DATA_DIR}",
+        "target: bronze.source_records (payload JSONB utuh + lineage)",
+        "rerun aman melalui UNIQUE (source_file, source_row_number)",
+        "manifest.json diabaikan",
+        "mode simulasi: tidak ada baris yang benar-benar dimuat",
+    ]
     return _dispatch("load_bronze", notes, context)
 
 
@@ -266,7 +256,7 @@ def validate_gold_and_record_metadata(**context: Any) -> dict[str, Any]:
 with DAG(
     dag_id="milestone1_omnichannel_pipeline",
     description=(
-        "Pipeline omnichannel retail: validate -> init schema -> bronze -> silver "
+        "Pipeline omnichannel retail: validate raw -> init schema -> bronze -> silver "
         "-> quality gate -> gold -> validate gold (mode simulasi secara default)"
     ),
     start_date=datetime(2025, 1, 1),
@@ -281,8 +271,8 @@ with DAG(
     },
 ) as dag:
     t_validate = PythonOperator(
-        task_id="validate_manifest_and_raw",
-        python_callable=validate_manifest_and_raw,
+        task_id="validate_raw_files",
+        python_callable=validate_raw_files,
     )
     t_init_schemas = PythonOperator(
         task_id="initialize_postgres_schemas",
@@ -319,4 +309,3 @@ with DAG(
         >> t_gold
         >> t_validate_gold
     )
-

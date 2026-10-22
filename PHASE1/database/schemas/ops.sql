@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS ops.pipeline_runs (
 CREATE TABLE IF NOT EXISTS ops.pipeline_tasks (
     task_id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     pipeline_run_id   TEXT NOT NULL REFERENCES ops.pipeline_runs (pipeline_run_id),
-    task_name         TEXT NOT NULL,      -- 'validate_manifest', 'build_bronze', ...
+    task_name         TEXT NOT NULL,      -- 'validate_raw_files', 'build_bronze', ...
     status            TEXT NOT NULL,      -- 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED'
     started_at_utc    TIMESTAMPTZ NOT NULL DEFAULT now(),
     finished_at_utc   TIMESTAMPTZ,

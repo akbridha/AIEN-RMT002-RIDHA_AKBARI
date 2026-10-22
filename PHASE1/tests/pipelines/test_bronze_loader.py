@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
-from pathlib import Path
 
 import pytest
 
 from pipelines.bronze import build_bronze
+from pipelines.ingestion import validate_raw_files
 
 
 class FakeCursor:
@@ -49,27 +48,16 @@ class FakeConnection:
             return FakeCursor(inserted)
 
         if "INSERT INTO bronze.ingestion_files" in query:
-            source_file, file_format, size, checksum, manifest_checksum, count, run_id = params
+            source_file, file_format, size, checksum, count, run_id = params
             self.files[(source_file, run_id)] = {
                 "file_format": file_format,
                 "file_size_bytes": size,
                 "file_checksum": checksum,
-                "manifest_checksum": manifest_checksum,
                 "row_count": count,
             }
             return FakeCursor()
 
         raise AssertionError(f"Unexpected SQL: {query}")
-
-
-def _write_manifest(root: Path, relative_paths: list[str]) -> None:
-    checksums = {
-        relative_path: hashlib.sha256((root / relative_path).read_bytes()).hexdigest()
-        for relative_path in relative_paths
-    }
-    (root / "manifest.json").write_text(
-        json.dumps({"files": checksums}), encoding="utf-8"
-    )
 
 
 def test_loader_loads_json_and_csv_in_batches_and_is_idempotent(tmp_path, monkeypatch):
@@ -84,7 +72,7 @@ def test_loader_loads_json_and_csv_in_batches_and_is_idempotent(tmp_path, monkey
     orders_path.write_text(json.dumps(orders), encoding="utf-8")
     inventory_path = raw_dir / "inventory" / "snapshots.csv"
     inventory_path.write_text("product_id,quantity\nP-1,7\n", encoding="utf-8")
-    _write_manifest(raw_dir, ["operational/orders.json", "inventory/snapshots.csv"])
+    (raw_dir / "manifest.json").write_text("not valid JSON and intentionally ignored")
 
     database = FakeConnection()
     monkeypatch.setattr(build_bronze, "connect", lambda target: database)
@@ -107,35 +95,49 @@ def test_loader_loads_json_and_csv_in_batches_and_is_idempotent(tmp_path, monkey
     assert json.loads(database.records[("operational/orders.json", 1)][4]) == orders[0]
 
 
-def test_loader_rejects_changed_file_and_manifest_mismatch(tmp_path, monkeypatch):
+def test_loader_rejects_file_changed_since_previous_load(tmp_path, monkeypatch):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     source = raw_dir / "customers.json"
     source.write_text('[{"customer_id":"C-1"}]', encoding="utf-8")
-    _write_manifest(raw_dir, ["customers.json"])
 
     database = FakeConnection()
-    database.files[("customers.json", "previous-run")] = {
-        "file_checksum": "different-checksum"
-    }
     monkeypatch.setattr(build_bronze, "connect", lambda target: database)
 
-    with pytest.raises(ValueError, match="changed since an earlier Bronze load"):
-        build_bronze.run(input_dir=raw_dir)
-
-    _write_manifest(raw_dir, ["customers.json"])
+    build_bronze.run(input_dir=raw_dir, pipeline_run_id="first-run")
     source.write_text('[{"customer_id":"C-2"}]', encoding="utf-8")
-    with pytest.raises(ValueError, match="SHA-256 mismatch"):
-        build_bronze.run(input_dir=raw_dir)
+    with pytest.raises(ValueError, match="changed since an earlier Bronze load"):
+        build_bronze.run(input_dir=raw_dir, pipeline_run_id="second-run")
 
 
-def test_loader_requires_manifest_by_default(tmp_path):
+def test_loader_does_not_require_manifest(tmp_path, monkeypatch):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "items.json").write_text("[]", encoding="utf-8")
 
-    with pytest.raises(FileNotFoundError, match="Required manifest"):
-        build_bronze.run(input_dir=raw_dir)
+    database = FakeConnection()
+    monkeypatch.setattr(build_bronze, "connect", lambda target: database)
+    result = build_bronze.run(input_dir=raw_dir)
+
+    assert result["files_processed"] == 1
+    assert result["rows_read"] == 0
+    assert ("items.json", result["pipeline_run_id"]) in database.files
+
+
+def test_raw_validation_checks_required_files_and_ignores_manifest(tmp_path):
+    for relative_path in validate_raw_files.REQUIRED_SOURCE_FILES:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix == ".json":
+            path.write_text("[]", encoding="utf-8")
+        else:
+            path.write_text("column\n", encoding="utf-8")
+    (tmp_path / "manifest.json").write_text("invalid JSON, ignored", encoding="utf-8")
+
+    result = validate_raw_files.run(input_dir=tmp_path)
+
+    assert result["files_validated"] == len(validate_raw_files.REQUIRED_SOURCE_FILES)
+    assert result["records_found"] == 0
 
 
 def test_loader_rejects_non_positive_batch_size(tmp_path):

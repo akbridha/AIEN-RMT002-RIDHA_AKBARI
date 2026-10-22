@@ -16,6 +16,12 @@ database with:
 uv run python -m pipelines.ingestion.initialize_database
 ```
 
+The participant pipeline does not read or require `manifest.json`. Raw file
+completeness and parseability are checked directly, and Bronze computes its
+own file checksums and record counts. If an existing local database was
+initialized with an older Bronze schema, its nullable `manifest_checksum`
+column may remain unused; the loader no longer reads or writes that column.
+
 The pipeline uses the local profile even when the analytics engine is pointed
 at Neon:
 

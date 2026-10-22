@@ -6,14 +6,13 @@
 
 CREATE SCHEMA IF NOT EXISTS bronze;
 
--- Daftar file yang pernah di-ingest + checksum-nya (validasi manifest)
+-- Daftar file yang pernah di-ingest dan checksum yang dihitung loader.
 CREATE TABLE IF NOT EXISTS bronze.ingestion_files (
     file_id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     source_file       TEXT NOT NULL,             -- relatif terhadap data/raw/
     file_format       TEXT NOT NULL,             -- 'json' | 'csv'
     file_size_bytes   BIGINT,
     file_checksum     TEXT NOT NULL,             -- SHA-256 isi file
-    manifest_checksum TEXT,                      -- checksum yang tercatat di manifest.json
     row_count         INTEGER,
     pipeline_run_id   TEXT NOT NULL,
     detected_at_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),

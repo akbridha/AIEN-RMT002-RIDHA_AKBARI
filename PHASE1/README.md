@@ -63,7 +63,8 @@ Analisis dan visualisasi melalui UI
 
 Anda harus:
 
-1. Mengunduh dan memvalidasi raw data dari Google Drive.
+1. Mengunduh file raw dari Google Drive serta memeriksa kelengkapan dan
+   keterbacaannya. Pipeline peserta tidak menggunakan `manifest.json`.
 2. Mempertahankan source evidence ke Bronze tanpa mengubah payload asli.
 3. Mendesain Silver sebagai tabel typed, normalized, tervalidasi, dan memiliki
    lineage.
@@ -145,7 +146,6 @@ menjadi:
 
 ```text
 data/raw/
-├── manifest.json
 ├── operational/
 │   ├── customers.json
 │   ├── customer_profiles.json
@@ -214,7 +214,7 @@ Anda. Jangan menjadikan perintah CLI manual sebagai pengganti DAG.
 DAG minimal harus memiliki tahapan berikut dengan dependency yang jelas:
 
 ```text
-validate manifest dan raw files
+validate raw files (manifest.json diabaikan)
             ↓
 initialize PostgreSQL schemas
             ↓
@@ -304,7 +304,7 @@ Jangan upload API key atau password database dalam bentuk apa pun.
 
 | Komponen | Bobot | Indikator |
 |---|---:|---|
-| Bronze ingestion dan source preservation | 15% | Semua input dipertahankan, lineage jelas, append-only/idempotent, manifest tervalidasi |
+| Bronze ingestion dan source preservation | 15% | Semua input dipertahankan, lineage jelas, append-only/idempotent, file checksum dan jumlah record tercatat |
 | Silver normalization dan quality handling | 25% | Tipe data, UTC, deduplication, referential checks, rejection, dan temporal logic benar |
 | Gold transformation dan grain | 30% | Lima tabel terisi, grain benar, metric benar, tidak ada fact multiplication |
 | Reconciliation dan quality gate | 15% | Pipeline mendeteksi duplikasi, revenue mismatch, refund mismatch, dan broken transformation |
@@ -315,3 +315,7 @@ Jangan upload API key atau password database dalam bentuk apa pun.
 > **Catatan:** Neon hanya berisi sample Gold untuk demo instructor. Pipeline
 > peserta harus berjalan di PostgreSQL lokal dan tidak meng-upload Bronze atau
 > Silver ke Neon.
+
+Pipeline peserta ini tidak membaca atau mensyaratkan `manifest.json`. Loader
+menghitung SHA-256 dan jumlah record setiap file secara langsung, lalu
+menyimpannya pada metadata ingestion Bronze.
