@@ -38,18 +38,32 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
 
 
 
-    A = pakai JSONB saja sesuai arahan Readme.
-     README memperbolehkan payload Bronze disimpan sebagai JSONB atau representasi setara. Desain yang ada memakai satu tabel `bronze.source_records` dengan kolom `payload JSONB` dan kolom lineage terpisah. JSONB menyimpan nilai JSON, tetapi bukan teks file persis byte demi byte (misalnya spasi dan urutan key). Karena itu file raw tetap disimpan tanpa perubahan di `data/raw/`.
+    A = pADA file readmie ada anjuran JSONB. README memperbolehkan payload Bronze disimpan sebagai JSONB atau representasi setara. Desain yang ada memakai satu tabel `bronze.source_records` dengan kolom `payload JSONB` dan kolom lineage terpisah. JSONB menyimpan nilai JSON, tetapi bukan teks file persis byte demi byte (misalnya spasi dan urutan key). Karena itu file raw tetap disimpan tanpa perubahan di `data/raw/`.
+    Q = Apa perbedaan `pipelines/__init__.py` dan `pipelines/ingestion/__init__.py`?
+    A = Keduanya adalah penanda/pengaturan package Python, bukan script koneksi atau inisialisasi database. File pertama menandai folder `pipelines` sebagai package utama. File kedua menandai subpackage `pipelines.ingestion`. Keduanya membantu import seperti `from pipelines.ingestion.db import connect`. Untuk membuat tabel, gunakan modul terpisah `pipelines.ingestion.initialize_database`.
+
+    Q = Apakah tabel `bronze.ingestion_files` memang diperlukan?
+    A = Tidak wajib secara teori, tetapi berguna dan sesuai schema Bronze saat ini. `bronze.source_records` mencatat lineage per record; `bronze.ingestion_files` mencatat metadata per file dan per run, seperti SHA-256, ukuran, jumlah record, checksum manifest, dan `pipeline_run_id`. Tanpa tabel ini, metadata file harus dicatat di tempat lain dan pengecekan file yang berubah menjadi lebih sulit.
+
+    Q = Bagaimana menjalankan loader Bronze yang sesuai dengan schema?
+    A = Jalankan dari folder `PHASE1` dengan `uv run python -m pipelines.bronze.build_bronze --input data/raw --batch-size 500 --pipeline-run-id manual-test`. Secara default loader mewajibkan manifest. Untuk uji lokal tanpa manifest saja, tambahkan `--allow-missing-manifest`; jangan gunakan opsi itu untuk submission yang mensyaratkan validasi manifest. Loader membaca JSON/CSV, memasukkan satu record per baris ke `bronze.source_records`, dan mencatat ringkasan tiap file ke `bronze.ingestion_files`. Pastikan tabel sudah dibuat dengan modul inisialisasi schema terlebih dahulu.
     
     Q = Bagaimana cara membuat script untuk menjalankan schema agar tabel benar-benar dibuat di database?
     A = PostgreSQL dan database tujuan harus sudah hidup/tersedia terlebih dahulu. File SQL adalah resep pembentukan schema/tabel; untuk menerapkannya gunakan `uv run python -m pipelines.ingestion.initialize_database` dari folder `PHASE1`. Script tersebut memakai `shared/db.py`, memilih koneksi `local`, lalu menjalankan `bronze.sql`, `silver.sql`, `gold.sql`, dan `ops.sql` dalam satu koneksi/transaksi. Script dapat dijalankan manual untuk pengembangan, dan fungsi `run()` yang sama dapat dipanggil sebagai task inisialisasi dari DAG. Jika salah satu file schema hilang atau eksekusi SQL gagal, proses akan gagal dan transaksi dibatalkan.
 
     Q = Bagaimana cara mengeksekusi satu FIle .py saja tanpa harus lewat Pipeline?
     A = File harus menyediakan fungsi kerja dan entry point `if __name__ == "__main__":`. Jalankan dari folder `PHASE1` dengan `uv run python -m nama_paket.nama_modul`, misalnya `uv run python -m pipelines.ingestion.initialize_database`. Untuk loader, setelah modulnya tersedia, contoh bentuknya `uv run python -m pipelines.bronze.build_bronze --input data/raw`; argumen yang tersedia ditentukan oleh parser loader. Menjalankan satu modul manual tidak mengharuskan menjalankan DAG, tetapi PostgreSQL, schema, dan konfigurasi koneksi tetap harus siap.
+
+    RUN LOADER BRONZE karena manifest ditiadakan `uv run python -m pipelines.bronze.build_bronze --input data/raw --allow-missing-manifest`
+
     
     Q = Bagaimana cara memastikan dalam satu batch data yang sama tidak terambil 2 kali pada batch berbeda.
     A = Batch adalah cara mengirim data dalam potongan-potongan; batch ID saja tidak mencegah record yang sama terkirim ulang. Berikan setiap record kunci sumber yang stabil, misalnya pasangan `(source_file, source_row_number)`, buat pasangan itu `UNIQUE` di PostgreSQL, dan lakukan insert dengan `ON CONFLICT DO NOTHING` (atau strategi upsert yang disengaja). Nomor baris harus dihitung dari posisi record di seluruh file, bukan dimulai ulang dari 1 pada setiap batch. Dengan demikian, bila batas batch tumpang tindih atau run diulang, database menolak record yang sama. Skema Bronze saat ini sudah memiliki `UNIQUE (source_file, source_row_number)`. Batasannya: jika isi file berubah tetapi nama dan nomor baris sama, record baru akan dianggap konflik; untuk input yang dapat berubah, gunakan identitas versi/checksum file dalam kunci atau perlakukan setiap versi sebagai file berbeda. Tetap rekonsiliasikan jumlah yang dibaca, dimasukkan, dan dilewati.
 
+
+
+    Q = apa fungis file init di setiap directory script?
+    A = “dua file init” sebagai pipelines/__init__.py dan pipelines/ingestion/__init__.py. Keduanya bukan program yang membuat tabel atau membuka koneksi. Keduanya     membantu Python mengenali folder sebagai package agar import seperti from pipelines.ingestion.db import connect dapat digunakan.
 
     Q = <Silver> Bagaimana cara untuk mendeteksi DUplikasi pada data.
     A = Pakai perbandingan beberpa kolom dari row 

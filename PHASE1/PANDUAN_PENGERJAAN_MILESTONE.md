@@ -547,3 +547,12 @@ berguna daripada banyak file kode yang belum pernah diuji.
 - `database/README.md`: penggunaan database lokal dan cara inisialisasi schema.
 - `docs/demo-queries.sql`: contoh query analitik yang dapat membantu
   memeriksa hasil Gold.
+
+
+
+
+database diinisiasi dengan
+`uv run python -m pipelines.ingestion.initialize_database`
+
+  RUN LOADER BRONZE karena manifest ditiadakan 
+  `uv run python -m pipelines.bronze.build_bronze --input data/raw --allow-missing-manifest`
