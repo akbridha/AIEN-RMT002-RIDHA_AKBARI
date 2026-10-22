@@ -273,6 +273,14 @@ Silver mengubah arsip Bronze menjadi data yang lebih mudah dipakai dan aman
 untuk dihitung. Tahap ini harus membaca Bronze, bukan membaca file raw secara
 langsung.
 
+Implementasikan tahap ini di `pipelines/silver/build_silver.py`. Satu fungsi
+`run()` mengorkestrasi pemrosesan seluruh entity dan menulis ke beberapa tabel
+Silver; transformasi khusus entity tetap didefinisikan per tabel, sedangkan
+fungsi umum seperti `standardize_time_utc()` dan
+`standardize_uppercase()` dipakai bersama agar aturan konsisten. Tambahkan
+entity baru ke spesifikasi pemetaan dan uji transformasinya, bukan dengan
+mengulang koneksi atau logika insert.
+
 ### Yang dikerjakan
 
 1. Ekstrak field dari payload ke kolom bertipe, misalnya ID sebagai teks,

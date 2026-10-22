@@ -96,8 +96,14 @@ Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan con
 
     Q = Bagaimana memastikan 	Tipe data, UTC, deduplication, referential checks, rejection, dan temporal logic benar?
 
+    Q = bagaimana eksekusi build_silver? (parameternya)?
+    A = uv run python -m pipelines.silver.build_silver 
+     uv run python -m pipelines.silver.build_silver --pipeline-run-id manual-test-01
+
+    Q = apakah build silver memakai method batching juga?
 
 
+    Q =  silver memiliki banyak table yang harus diisi, bagaimana kodenya? apakah permethod untuk satu table dan beberapa method universal untuk urus Tipe data, UTC, deduplication, referential checks, rejection ?
 
 
 
