@@ -1,9 +1,8 @@
 # ---------------------------------------------------------------------------
-# Airflow untuk SIMULASI pipeline milestone P1M1.
-# Mode PIPELINE_MODE=simulate (default): task DAG hanya menulis log simulasi
-# + cek file read-only — TANPA koneksi database dan TANPA operasi nyata.
-# Set PIPELINE_MODE=real pada .env / environment host untuk mengaktifkan
-# pemanggilan modul pipelines.* yang sesungguhnya.
+# Airflow untuk pipeline milestone P1M1.
+# Mode PIPELINE_MODE=real (default) menjalankan pipeline sesungguhnya.
+# Set PIPELINE_MODE=simulate pada .env / environment host untuk simulasi
+# tanpa koneksi database dan tanpa operasi ingestion/build/transform nyata.
 # Metadata Airflow memakai SQLite bawaan image (cukup untuk simulasi lokal).
 # ---------------------------------------------------------------------------
 x-airflow-common: &airflow-common
@@ -17,10 +16,17 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__CORE__FERNET_KEY: ""
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
-    PIPELINE_MODE: ${PIPELINE_MODE:-simulate}
+    PIPELINE_MODE: ${PIPELINE_MODE:-real}
     RAW_DATA_DIR: /app/data/raw
     SCHEMAS_DIR: /app/database/schemas
     PYTHONPATH: /app
+    # Keep Docker service DNS authoritative over LOCAL_DATABASE_URL in .env.
+    LOCAL_DATABASE_URL: ""
+    LOCAL_POSTGRES_HOST: postgres
+    LOCAL_POSTGRES_PORT: 5432
+    LOCAL_POSTGRES_DB: retail_analytics
+    LOCAL_POSTGRES_USER: retail
+    LOCAL_POSTGRES_PASSWORD: retail
   volumes:
     - airflow_data:/opt/airflow
     - ./dags:/opt/airflow/dags
@@ -53,6 +59,8 @@ services:
       POSTGRES_USER: retail
       POSTGRES_PASSWORD: retail
       ANALYTICS_DB_TARGET: local
+      # Keep Docker service DNS authoritative over LOCAL_DATABASE_URL in .env.
+      LOCAL_DATABASE_URL: ""
       LOCAL_POSTGRES_HOST: postgres
       LOCAL_POSTGRES_PORT: 5432
       LOCAL_POSTGRES_DB: retail_analytics
@@ -119,6 +127,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

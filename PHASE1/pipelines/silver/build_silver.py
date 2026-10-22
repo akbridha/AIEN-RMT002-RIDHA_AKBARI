@@ -1,3 +1,60 @@
+#     Q = apa fungis file init di setiap directory script?
+#     A = “dua file init” sebagai pipelines/__init__.py dan pipelines/ingestion/__init__.py. Keduanya bukan program yang membuat tabel atau membuka koneksi. Keduanya     membantu Python mengenali folder sebagai package agar import seperti from pipelines.ingestion.db import connect dapat digunakan.
+
+#     Q = Ketika build bronze bekerja dalam beberapa batch, Bagaimana mengetahui suatu data raw sudah ingested semua. secara kita eksekusi terus menerus. Pada kasus di dalam pipeline chaining bagaimana DAG mengetahui kapan harus melanjutkan ke fase berikutny?
+
+
+#     A = Pada baris 211 terdapat kode untuk mengumpulkan semua file yang ada 
+#     ``raw_root.rglob("*")` mengumpulkan __semua__ file lalu masuk ke variable 'source_files'
+#     dari situ acuan untuk loop ingestion
+# ` 
+    
+#     Jika tidak ada file sama sekali → FileNotFoundError → task DAG gagal (tidak lanjut). ` raise FileNotFoundError(f"No JSON or CSV source files found under {raw_root}")`
+
+#     ====== Silver ==========
+
+#     Q = <Silver> Bagaimana cara untuk mendeteksi DUplikasi pada data.
+#     A = Pakai perbandingan beberpa kolom dari row 
+
+#     Q =  Setelah masuk silver apakah struktur kolom akan berubah?
+
+#     Q = Bagaimana memastikan 	Tipe data, UTC, deduplication, referential checks, rejection, dan temporal logic benar?
+
+#     Q = bagaimana eksekusi build_silver? (parameternya)?
+#     A = uv run python -m pipelines.silver.build_silver 
+#      uv run python -m pipelines.silver.build_silver --pipeline-run-id manual-test-01
+
+#     Q = apakah build silver memakai method batching juga?
+
+
+#     Q =  silver memiliki banyak table yang harus diisi, bagaimana kodenya? apakah permethod untuk satu table dan beberapa method universal untuk urus Tipe data, UTC, deduplication, referential checks, rejection ?
+
+
+
+#     ====== DAG =====
+#      Q = Bagaimana cara setting airflow agar mengikut sertakan suatu script atau tidak
+
+
+#     Q = Bagaiamana passing argument ketika menjalanakan suatu script .py ?
+
+
+#     Q = saat semua script per proses dieksekusi DAG apakah per satu batch ingestion akan diproses sampai gold per iterasi secara 
+#         waterfall/ sequensial.
+#     A = Alur pengerjaan tidak iterasi satu cyclce per batch, iterasi semua fase hanya satu kali. namun per fase yang diiterasi sampai datanya habis dahulu baru lanjut ke fase berikutnya . proses suatu fase tidak dilanjutkan sebeleum iterasi di fase   itu menghabiskan semua data.
+
+
+# Set-Location PHASE1
+
+# uv run python -m pipelines.ingestion.initialize_database
+
+# uv run python -m pipelines.bronze.build_bronze
+# uv run python -m pipelines.silver.build_silver
+# uv run python -m pipelines.gold.build_gold
+
+
+"""Load JSON and CSV source records into the append-only Bronze schema."""
+
+
 """Ubah data Bronze menjadi tabel Silver yang lebih rapi dan siap dipakai."""
 
 from __future__ import annotations

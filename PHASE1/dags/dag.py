@@ -7,13 +7,11 @@ Urutan wajib:
 
 Mode operasi dikontrol oleh environment variable ``PIPELINE_MODE``:
 
-* ``simulate`` (default) — setiap tahap HANYA mencatat log simulasi dan
-  pemeriksaan file read-only (raw/schema). Tidak ada koneksi database
-  dan tidak ada operasi ingestion/build/transform nyata. Tujuannya agar
-  dependency, rerun, dan perilaku quality gate bisa didemokan lebih dulu.
-* ``real`` — setiap tahap memanggil modul pipeline yang sesuai
-  (``pipelines.*``). Modul yang belum diimplementasikan menghasilkan error
-  yang jelas, sehingga tahap gagal eksplisit, bukan "berhasil palsu".
+* ``real`` (default) — setiap tahap memanggil modul pipeline yang sesuai
+  (``pipelines.*``) dan terhubung ke PostgreSQL.
+* ``simulate`` — setiap tahap HANYA mencatat log simulasi dan pemeriksaan file
+  read-only (raw/schema), tanpa koneksi database atau operasi ingestion nyata.
+  Gunakan untuk mendemokan dependency, rerun, dan quality gate.
 
 ``dag_run.conf`` mendukung ``{"simulate_gate_failure": true}`` untuk
 mendemonstrasikan quality gate yang menghentikan tahap Gold.
@@ -35,7 +33,7 @@ from airflow.operators.python import PythonOperator
 
 log = logging.getLogger(__name__)
 
-PIPELINE_MODE = os.getenv("PIPELINE_MODE", "simulate").strip().lower()
+PIPELINE_MODE = os.getenv("PIPELINE_MODE", "real").strip().lower()
 RAW_DATA_DIR = Path(os.getenv("RAW_DATA_DIR", "data/raw"))
 SCHEMAS_DIR = Path(os.getenv("SCHEMAS_DIR", "database/schemas"))
 
@@ -108,7 +106,7 @@ def _simulate(stage: str, notes: list[str], context: dict[str, Any], pause: floa
     }
 
 
-def _dispatch(stage: str, simulate_notes: list[str], context: dict[str, Any]) -> dict[str, Any]:
+def _dispatch(stage: str, simulate_notes: list[str], context: dict[str, Any]) -> Any:
     if PIPELINE_MODE == "real":
         return _execute_real(stage, context)
     return _simulate(stage, simulate_notes, context)
@@ -140,7 +138,7 @@ def validate_raw_files(**context: Any) -> dict[str, Any]:
 # --- Tahap 2: inisialisasi skema PostgreSQL ---------------------------------
 
 
-def initialize_postgres_schemas(**context: Any) -> dict[str, Any]:
+def initialize_postgres_schemas(**context: Any) -> Any:
     found = [name for name in SCHEMA_FILES if (SCHEMAS_DIR / name).exists()]
     missing = [name for name in SCHEMA_FILES if name not in found]
     notes = [
@@ -258,7 +256,8 @@ with DAG(
     dag_id="milestone1_omnichannel_pipeline",
     description=(
         "Pipeline omnichannel retail: validate raw -> init schema -> bronze -> silver "
-        "-> quality gate -> gold -> validate gold (mode simulasi secara default)"
+        "-> quality gate -> gold -> validate gold "
+        f"(mode {PIPELINE_MODE})"
     ),
     start_date=datetime(2025, 1, 1),
     schedule=None,  # trigger manual — cocok untuk simulasi dan demo

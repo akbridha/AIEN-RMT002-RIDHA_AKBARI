@@ -1,4 +1,29 @@
-"""Load JSON and CSV source records into the append-only Bronze schema."""
+
+    # ==== Bronze=====
+
+
+
+    # Q = Bagaimana menjalankan loader Bronze yang sesuai dengan schema?
+    # A = Jalankan dari folder `PHASE1` dengan `uv run python -m pipelines.bronze.build_bronze --input data/raw --batch-size 500 --pipeline-run-id manual-test`. Loader tidak membaca atau membutuhkan manifest. Loader membaca JSON/CSV, memasukkan satu record per baris ke `bronze.source_records`, menghitung checksum file dan payload, serta mencatat metadata file ke `bronze.ingestion_files`. Pastikan tabel sudah dibuat dengan modul inisialisasi schema terlebih dahulu.
+    
+    # schema hilang atau eksekusi SQL gagal, proses akan gagal dan transaksi dibatalkan.
+
+    # Q = Bagaimana cara mengeksekusi satu FIle .py saja tanpa harus lewat Pipeline?
+    # A = File harus menyediakan fungsi kerja dan entry point `if __name__ == "__main__":`. Jalankan dari folder `PHASE1` dengan `uv run python -m nama_paket.nama_modul`, misalnya `uv run python -m pipelines.ingestion.initialize_database`. Untuk loader, setelah modulnya tersedia, contoh bentuknya `uv run python -m pipelines.bronze.build_bronze --input data/raw`; argumen yang tersedia ditentukan oleh parser loader. Menjalankan satu modul manual tidak mengharuskan menjalankan DAG, tetapi PostgreSQL, schema, dan konfigurasi koneksi tetap harus siap.
+
+    # RUN LOADER BRONZE `uv run python -m pipelines.bronze.build_bronze --input data/raw`
+
+    
+    # Q = Bagaimana cara memastikan dalam satu batch data yang sama tidak terambil 2 kali pada batch berbeda.
+    # A = Batch adalah cara mengirim data dalam potongan-potongan; batch ID saja tidak mencegah record yang sama terkirim ulang. Berikan setiap record kunci sumber yang stabil, misalnya pasangan `(source_file, source_row_number)`, buat pasangan itu `UNIQUE` di PostgreSQL, dan lakukan insert dengan `ON CONFLICT DO NOTHING` (atau strategi upsert yang disengaja). Nomor baris harus dihitung dari posisi record di seluruh file, bukan dimulai ulang dari 1 pada setiap batch. Dengan demikian, bila batas batch tumpang tindih atau run diulang, database menolak record yang sama. Skema Bronze saat ini sudah memiliki `UNIQUE (source_file, source_row_number)`. Batasannya: jika isi file berubah tetapi nama dan nomor baris sama, record baru akan dianggap konflik; untuk input yang dapat berubah, gunakan identitas versi/checksum file dalam kunci atau perlakukan setiap versi sebagai file berbeda. Tetap rekonsiliasikan jumlah yang dibaca, dimasukkan, dan dilewati.
+
+    # Q = query sederhana untuk memastikan tidak ada duplikat antar batch
+    # A = SELECT source_file, source_row_number, COUNT(*) AS jumlah
+    #     FROM bronze.source_records
+    #     GROUP BY source_file, source_row_number
+    #     HAVING COUNT(*) > 1;
+
+
 
 from __future__ import annotations
 
