@@ -140,19 +140,21 @@ Gold	--pipeline-run-id ID	ID eksekusi untuk lineage	    -Dibuat otomatis
 
 
 
+data tidak wajar dan null pada kolom-kolom berikut
+ roas FROM gold.channel_campaign_daily
+ active_channel FROM gold.customer_daily
+ stockout_rate FROM gold.executive_kpis_daily
+ store_id FROM gold.order_360
 
-SELECT roas FROM gold.channel_campaign_daily
-ORDER BY metric_date ASC, sales_channel ASC, campaign_id ASC LIMIT 100
 
-
-SELECT active_channel FROM gold.customer_daily
-ORDER BY customer_id ASC, metric_date ASC LIMIT 100
-
-SELECT stockout_rate FROM gold.executive_kpis_daily
-ORDER BY metric_date ASC LIMIT 100
-
-SELECT store_id FROM gold.order_360
-ORDER BY order_id ASC LIMIT 100
+Beberapa nilai `NULL` pada Gold merupakan nilai yang disengaja: ROAS tidak
+dapat dihitung saat campaign spend nol, `active_channel` tidak terdefinisi
+pada customer-date tanpa order, dan `store_id` tidak berlaku untuk channel
+digital. `stockout_flag` bernilai true jika stok produk nol di setidaknya satu
+lokasi pada hari snapshot; `available_inventory` tetap berisi total stok semua
+lokasi. Dengan demikian, stok di lokasi lain tidak menutupi stockout lokal saat
+menghitung `stockout_rate`. Gold builder mencetak jumlah NULL/nol tersebut dan
+menggagalkan run bila menemukan kombinasi yang tidak konsisten.
 
 
 

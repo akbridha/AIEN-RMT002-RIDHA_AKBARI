@@ -25,6 +25,8 @@ def test_run_rebuilds_all_gold_tables_and_logs_progress(monkeypatch, caplog):
 
         def execute(self, query, params=()):
             self.calls.append((query, params))
+            if query == build_gold.GOLD_DIAGNOSTICS_SQL:
+                return FakeCursor((2, 2, 0, 58, 58, 0, 10, 0, 30, 0, 90, 0))
             if query.startswith("SELECT COUNT(*)"):
                 return FakeCursor((3,))
             return FakeCursor()
@@ -37,6 +39,11 @@ def test_run_rebuilds_all_gold_tables_and_logs_progress(monkeypatch, caplog):
 
     assert results["pipeline_run_id"] == "run-1"
     assert results["rows_loaded"] == 15
+    assert results["diagnostics"]["null_roas_zero_spend"] == 2
+    assert results["diagnostics"]["zero_roas_positive_spend_no_revenue"] == 58
+    assert results["diagnostics"]["null_active_channel_with_orders"] == 0
+    assert results["diagnostics"]["null_store_id_store_channel"] == 0
+    assert results["diagnostics"]["stockout_rate_mismatch_days"] == 0
     assert {
         table: metrics["loaded"] for table, metrics in results["tables"].items()
     } == {table: 3 for table in build_gold.GOLD_TABLES}
@@ -50,10 +57,11 @@ def test_run_rebuilds_all_gold_tables_and_logs_progress(monkeypatch, caplog):
     assert all(
         params == ("run-1",)
         for query, params in connection.calls
-        if query.lstrip().startswith("WITH")
+        if query in dict(build_gold.BUILD_STATEMENTS).values()
     )
     assert "[1/5] Building gold.order_360 from Silver" in caplog.text
     assert "[5/5] Finished gold.executive_kpis_daily: loaded=3" in caplog.text
+    assert "Expected values: NULL roas requires zero campaign spend" in caplog.text
     assert "refunded_units" in caplog.text
 
 
@@ -65,3 +73,10 @@ def test_gold_build_statements_populate_the_fixed_contract():
 
     assert insert_targets == [f"gold.{table}" for table in build_gold.GOLD_TABLES]
     assert all("%s" in statement for _, statement in build_gold.BUILD_STATEMENTS)
+
+
+def test_stockout_metric_preserves_zero_stock_at_any_location():
+    assert "BOOL_OR(available_quantity = 0) AS stockout_flag" in build_gold.BUILD_PRODUCT_DAILY_SQL
+    assert "COUNT(*) FILTER (WHERE stockout_flag IS TRUE)" in (
+        build_gold.BUILD_EXECUTIVE_KPIS_DAILY_SQL
+    )

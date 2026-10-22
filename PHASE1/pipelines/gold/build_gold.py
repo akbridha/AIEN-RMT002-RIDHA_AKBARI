@@ -21,6 +21,67 @@ GOLD_TABLES = (
 )
 
 DELETE_SQL = tuple(f"DELETE FROM gold.{table}" for table in GOLD_TABLES)
+GOLD_DIAGNOSTICS_SQL = """
+WITH inventory_by_date AS (
+    SELECT
+        metric_date,
+        COUNT(*) FILTER (WHERE stockout_flag IS TRUE) AS stockout_products,
+        COUNT(*) FILTER (WHERE stockout_flag IS NOT NULL) AS measured_products
+    FROM gold.product_daily
+    GROUP BY metric_date
+)
+SELECT
+    (SELECT COUNT(*) FROM gold.channel_campaign_daily WHERE roas IS NULL),
+    (SELECT COUNT(*) FROM gold.channel_campaign_daily
+        WHERE roas IS NULL AND campaign_spend = 0),
+    (SELECT COUNT(*) FROM gold.channel_campaign_daily
+        WHERE roas IS NULL AND campaign_spend <> 0),
+    (SELECT COUNT(*) FROM gold.channel_campaign_daily WHERE roas = 0),
+    (SELECT COUNT(*) FROM gold.channel_campaign_daily
+        WHERE roas = 0 AND campaign_spend > 0 AND net_revenue = 0),
+    (SELECT COUNT(*) FROM gold.channel_campaign_daily
+        WHERE roas = 0 AND (campaign_spend <= 0 OR net_revenue <> 0)),
+    (SELECT COUNT(*) FROM gold.customer_daily WHERE active_channel IS NULL),
+    (SELECT COUNT(*) FROM gold.customer_daily
+        WHERE active_channel IS NULL AND order_count > 0),
+    (SELECT COUNT(*) FROM gold.order_360 WHERE store_id IS NULL),
+    (SELECT COUNT(*) FROM gold.order_360
+        WHERE store_id IS NULL AND sales_channel = 'STORE'),
+    (SELECT COUNT(*) FROM gold.executive_kpis_daily
+        WHERE stockout_rate = 0),
+    (SELECT COUNT(*)
+        FROM gold.executive_kpis_daily AS kpis
+        LEFT JOIN inventory_by_date AS inventory USING (metric_date)
+        WHERE kpis.stockout_rate <> COALESCE(
+            ROUND(
+                inventory.stockout_products::NUMERIC
+                    / NULLIF(inventory.measured_products, 0),
+                4
+            ),
+            0
+        ))
+"""
+GOLD_DIAGNOSTIC_FIELDS = (
+    "null_roas",
+    "null_roas_zero_spend",
+    "null_roas_nonzero_spend",
+    "zero_roas",
+    "zero_roas_positive_spend_no_revenue",
+    "zero_roas_inconsistent",
+    "null_active_channel",
+    "null_active_channel_with_orders",
+    "null_store_id",
+    "null_store_id_store_channel",
+    "zero_stockout_rate_days",
+    "stockout_rate_mismatch_days",
+)
+GOLD_DIAGNOSTIC_VIOLATIONS = (
+    "null_roas_nonzero_spend",
+    "zero_roas_inconsistent",
+    "null_active_channel_with_orders",
+    "null_store_id_store_channel",
+    "stockout_rate_mismatch_days",
+)
 
 BUILD_ORDER_360_SQL = """
 WITH item_totals AS (
@@ -333,7 +394,8 @@ inventory_by_product_day AS (
         product_id,
         snapshot_date AS metric_date,
         SUM(available_quantity)::INTEGER AS available_inventory,
-        SUM(reserved_quantity)::INTEGER AS reserved_inventory
+        SUM(reserved_quantity)::INTEGER AS reserved_inventory,
+        BOOL_OR(available_quantity = 0) AS stockout_flag
     FROM silver.inventory_snapshots
     GROUP BY product_id, snapshot_date
 ),
@@ -360,7 +422,7 @@ SELECT
     inventory.reserved_inventory,
     CASE
         WHEN inventory.available_inventory IS NULL THEN NULL
-        ELSE inventory.available_inventory <= 0
+        ELSE inventory.stockout_flag
     END,
     COALESCE(promotions.promotion_count, 0),
     %s
@@ -560,8 +622,8 @@ customer_metrics AS (
 inventory_metrics AS (
     SELECT
         metric_date,
-        COUNT(*) FILTER (WHERE available_inventory = 0)::NUMERIC AS stockout_products,
-        COUNT(*) FILTER (WHERE available_inventory IS NOT NULL)::NUMERIC
+        COUNT(*) FILTER (WHERE stockout_flag IS TRUE)::NUMERIC AS stockout_products,
+        COUNT(*) FILTER (WHERE stockout_flag IS NOT NULL)::NUMERIC
             AS products_with_inventory
     FROM gold.product_daily
     GROUP BY metric_date
@@ -665,6 +727,26 @@ def _run(
                 table,
                 rows_loaded,
             )
+
+        diagnostic_row = connection.execute(GOLD_DIAGNOSTICS_SQL).fetchone()
+        diagnostics = dict(
+            zip(GOLD_DIAGNOSTIC_FIELDS, (int(value) for value in diagnostic_row), strict=True)
+        )
+        results["diagnostics"] = diagnostics
+        log.info("Gold NULL/zero diagnostics: %s", diagnostics)
+        violations = {
+            field: diagnostics[field]
+            for field in GOLD_DIAGNOSTIC_VIOLATIONS
+            if diagnostics[field] > 0
+        }
+        if violations:
+            raise ValueError(f"Gold NULL/zero metric checks failed: {violations}")
+
+        log.info(
+            "Expected values: NULL roas requires zero campaign spend; NULL active_channel "
+            "requires no orders that day; NULL store_id is valid for non-STORE channels; "
+            "stockout_rate counts product-days with at least one location at zero stock."
+        )
 
     log.warning(
         "Gold metric limitation: %s",
