@@ -527,7 +527,7 @@ berguna daripada banyak file kode yang belum pernah diuji.
 
 ## 15. Checklist selesai
 
-- [ ] Semua file raw sesuai manifest tersedia.
+- [V] Semua file raw sesuai manifest tersedia.
 - [ ] PostgreSQL lokal bisa diakses pipeline.
 - [ ] Schema Bronze, Silver, dan Ops dibuat; Gold contract tetap kompatibel.
 - [ ] Bronze menyimpan payload dan lineage serta aman untuk rerun.

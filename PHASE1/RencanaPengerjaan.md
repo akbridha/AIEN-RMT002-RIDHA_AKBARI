@@ -1,64 +1,78 @@
-Hari	07.00–09.00	
-1 — Persiapan dan Bronze	Pahami kontrak Gold dan struktur data. Unduh data ke data/raw/, periksa manifest, jumlah file, dan struktur direktori.	
-
-09.30–12.00	
+ Persiapan dan Bronze	Pahami kontrak Gold dan struktur data. Unduh data ke data/raw/, periksa manifest, jumlah file, dan struktur direktori.	
 
 Rancang tabel Bronze dan metadata lineage. Buat schema serta aturan penyimpanan payload sumber secara utuh.
 
-13.00–16.00
-
 Implementasikan pemuatan Bronze. Uji kelengkapan data, lineage, dan perilaku saat proses dijalankan ulang.
 
-
-
-
-Hari 2 07.00–09.00	
 — Silver	Rancang tabel bertipe, kunci deduplikasi, validasi referensi, dan aturan penolakan data.
 
-09.30–12.00	
+Implementasikan normalisasi timestamp ke UTC, deduplikasi deterministik, validasi, dan penanganan record invalid.	Tangani event, perubahan profil berbasis waktu, dan late-arriving records. 
+        
+Jalankan pengujian Silver dan tinjau catatan record yang ditolak.
 
-	Implementasikan normalisasi timestamp ke UTC, deduplikasi deterministik, validasi, dan penanganan record invalid.	Tangani event, perubahan profil berbasis waktu, dan late-arriving records. 
-    
-    13.00–16.00
-    
-    
-    Jalankan pengujian Silver dan tinjau catatan record yang ditolak.
-
-
-Hari 
-3 — 07.00–09.00	Gold dan metrik	Pastikan grain dan definisi metrik untuk lima tabel Gold. 
-
-09.30–12.00	
+Gold dan metrik	Pastikan grain dan definisi metrik untuk lima tabel Gold. 
 
 Rencanakan transformasi agar join tidak menggandakan fakta.	Bangun transformasi Gold: order, customer harian, produk harian, channel/campaign, dan KPI eksekutif.	
 
-13.00–16.00
-
 Uji grain, metrik, revenue/refund, campaign, inventory, serta rekonsiliasi terhadap Silver. Perbaiki mismatch yang ditemukan.
 
-
-
-4 — 
-07.00–09.00	
-
 Orkestrasi dan finalisasi	Lengkapi DAG Airflow dan dependency: validasi data → inisialisasi schema → Bronze → Silver → quality gate → Gold → validasi/metadata.
-09.30–12.00	
 
-
-	Jalankan pipeline end-to-end dari awal. Uji rerun, kegagalan quality gate, dan pencatatan status/error. Perbaiki bug integrasi.	
-    
-    
-    13.00–16.00
-    
-    Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan contoh query, lalu periksa kelengkapan submission serta pastikan tidak ada kredensial ikut terunggah.
+Jalankan pipeline end-to-end dari awal. Uji rerun, kegagalan quality gate, dan pencatatan status/error. Perbaiki bug integrasi.	 
+Jalankan pertanyaan analitik melalui engine/UI, simpan bukti run Airflow dan contoh query, lalu periksa kelengkapan submission serta pastikan tidak ada kredensial ikut terunggah.
 
 
 
 
-    Q & A 
+    ###### ======== Q & A ======== #####
     Q = apakah perlu buat directory baru lagi?
-    A =
-    __Tidak perlu directory baru, tidak perlu generate project baru.__ Repo yang sekarang sudah ADALAH "dasar" milestone ini — ini paket participant yang sudah disiapkan instructor (berbasis __uv__, Python ≥3.11, FastAPI engine + Streamlit UI + `gold.sql` contract + test harness). Yang harus Anda lakukan adalah __mengisi bagian yang hilang di dalam repo ini__, bukan scaffold proyek baru.
+    A = __Tidak perlu directory baru, tidak perlu generate project baru.__ Repo yang sekarang sudah ADALAH "dasar" milestone ini — ini paket participant yang sudah disiapkan instructor (berbasis __uv__, Python ≥3.11, FastAPI engine + Streamlit UI + `gold.sql` contract + test harness). Yang harus Anda lakukan adalah __mengisi bagian yang hilang di dalam repo ini__, bukan scaffold proyek baru.
+
+
+    Q = Bagaimana menghubungkan file-file python di repo ini agar bisa      berinteraksi dengan database postgre?
+    Bagaimana membuat file koneksi agar file file python ini bisa berhubungan dengan database apakah harus buat connection.py? dan bagiamana nanti jika saya eksekusi 'loader_bronze.py' apakah saya harus run file connection dan bagaimana jika saya melakukan via DAG nantinya bagaimana membuat koneksi tetap valid?
+    A = MEnggunakan file shared/db.py. aman digunakan jika secara file terpisah atau secara beruntun/pipepline dengan airflow.
+
+
+    Q = Untuk schema bronze pakai desain 'shred & load' atau pakai JSONB ?
+    A = pakai JSONB saja sesuai arahan Readme.
+    
+    Q = Bagaimana cara buat script untuk eksekusi schema yang sudah dibuat agar tablenya masuk di database yang sebenarnya?
+
+    Q = Bagaimana cara mengeksekusi satu FIle .py saja tanpa harus lewat Pipeline?
+    
+    Q = Bagaimana cara memastikan dalam satu batch data yang sama tidak terambil 2 kali pada batch berbeda.
+
+
+    Q = <Silver> Bagaimana cara untuk mendeteksi DUplikasi pada data.
+    A = Pakai perbandingan beberpa kolom dari row 
+
+    Q =  Setelah masuk silver apakah struktur kolom akan berubah?
+
+    Q = Bagaimana memastikan 	Tipe data, UTC, deduplication, referential checks, rejection, dan temporal logic benar?
+
+
+     Q = Bagaimana cara setting airflow agar mengikut sertakan suatu script atau tidak
+
+
+    Q = Bagaiamana passing argument ketika menjalanakan suatu script .py ?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Hasil audit repo (sudah ada vs belum ada)
 
@@ -86,6 +100,9 @@ pipelines/run_pipeline.py
 dags/dag.py                              ← entrypoint utama Airflow
 evidence/
 ```
+
+
+
 
 ## Temuan penting (jebakan yang saya temukan saat audit)
 
