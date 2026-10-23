@@ -52,9 +52,6 @@
 # uv run python -m pipelines.gold.build_gold
 
 
-"""Load JSON and CSV source records into the append-only Bronze schema."""
-
-
 """Ubah data Bronze menjadi tabel Silver yang lebih rapi dan siap dipakai."""
 
 from __future__ import annotations
@@ -366,7 +363,10 @@ ENTITY_SPECS = {
         decimals=("discount_amount",),
         references={"order_id": "orders.order_id", "promotion_id": "promotions.promotion_id"},
     ),
-    # Event punya event_id sebagai identitas unik dan waktu kejadian/penerimaan.
+    # Event identity resolution.
+    # Event tables memakai event_id sebagai identitas unik; row yang berasal dari
+    # payload yang sama dan event_id yang sama tidak boleh diperlakukan sebagai event
+    # berbeda ketika masuk ke Silver.
     "payment_events": _spec(
         "payment_events",
         (
@@ -500,7 +500,9 @@ def _normalize_record(record: dict[str, Any], spec: EntitySpec) -> dict[str, Any
     # Mulai dari payload asli, lalu ambil field yang diperlukan untuk tabel tujuan.
     payload = _merge_payload(record["payload"])
     values = _copy_fields(payload, spec.field_map, record)
-    # Konversi tipe data sesuai aturan entity, sebelum disimpan ke PostgreSQL.
+    # Timestamp normalization ke UTC.
+    # Semua field temporal diubah ke UTC sebelum validasi lanjutan agar satu record
+    # memiliki representasi waktu yang konsisten di seluruh tabel Silver.
     for field in spec.timestamps:
         values[field] = standardize_time_utc(values[field])
     for field in spec.dates:
@@ -509,6 +511,9 @@ def _normalize_record(record: dict[str, Any], spec: EntitySpec) -> dict[str, Any
         values[field] = _to_decimal(values[field])
     for field in spec.integers:
         values[field] = _to_integer(values[field])
+    # Status normalization.
+    # Beberapa field status/channel dibakukan ke uppercase supaya variasi kapitalisasi
+    # tidak menghasilkan multiple value untuk alasan yang sama.
     for field in spec.uppercase:
         values[field] = standardize_uppercase(values[field])
     for field in values:
@@ -528,7 +533,9 @@ def _normalize_record(record: dict[str, Any], spec: EntitySpec) -> dict[str, Any
 
 
 def _load_reference_values(connection: Any) -> dict[str, set[Any]]:
-    # Simpan ID yang sudah ada dalam set agar pengecekan "apakah ID ada?" cepat.
+    # Validasi foreign reference.
+    # Setiap parent key yang sudah ada di Silver dipelihara di memory agar pengecekan FK
+    # dapat dilakukan cepat dan konsisten sebelum baris baru diterima.
     references: dict[str, set[Any]] = {}
     for reference, (table, column) in REFERENCE_QUERIES.items():
         rows = connection.execute(f"SELECT {column} FROM {table}").fetchall()
@@ -668,10 +675,14 @@ def _reject(
 
 def _winner_order(spec: EntitySpec, record: dict[str, Any], values: dict[str, Any]) -> tuple[Any, ...]:
     if spec.table == "orders":
-        # Untuk order, pilih versi yang paling baru diubah; kalau waktunya sama,
-        # record Bronze dengan ID lebih besar menjadi penentu.
+        # Temporal version selection.
+        # Untuk order, pilih versi yang paling baru diubah; bila ada split waktu yang sama,
+        # maka Bronze record_id yang lebih besar menjadi tie-breaker deterministik.
         return (values.get("updated_at_utc") or datetime.min.replace(tzinfo=UTC), record["record_id"])
-    # Untuk entity lain, record Bronze yang masuk lebih dulu menjadi pemenang.
+    # Penanganan late-arriving records.
+    # Record yang datang terlambat tetap diproses dalam urutan versi temporal; untuk entity
+    # non-order, Bronze record_id yang lebih kecil dipilih agar deterministik dan tidak
+    # berubah tergantung urutan ingest-nya.
     return (-record["record_id"],)
 
 
@@ -748,6 +759,10 @@ def _run(
             candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
             for record in entity_records:
                 try:
+                    # Rejection untuk quantity negatif atau record invalid.
+                    # Format timestamp, numerik, dan field wajib divalidasi satu per satu;
+                    # bila gagal, record ditolak agar Silver tidak memuat data yang tidak
+                    # konsisten untuk downstream analytics.
                     values = _normalize_record(record, spec)
                 except (ValueError, TypeError, InvalidOperation) as exc:
                     # Catat kesalahan parsing/validasi, lalu lanjut ke record berikutnya.
@@ -765,6 +780,9 @@ def _run(
                     )
                     continue
 
+                # Validasi foreign reference.
+                # Setelah seluruh field normalisasi, cek apakah FK milik parent yang sudah
+                # terisi di Silver; bila tidak ada, record ditolak sebelum masuk ke tabel.
                 missing_reference = next(
                     (
                         (field, reference)
@@ -787,7 +805,9 @@ def _run(
                     continue
                 candidates.append((record, values))
 
-            # Kumpulkan record dengan key yang sama untuk memilih satu pemenang.
+            # Deduplication dengan deterministic key.
+            # Record dengan key natural yang sama digabung lalu dipilih satu winner secara
+            # deterministik agar tak ada duplikasi yang masuk ke Silver tanpa keputusan jelas.
             grouped: dict[tuple[Any, ...], list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
             for record, values in candidates:
                 grouped[tuple(values[key] for key in spec.keys)].append((record, values))
@@ -817,6 +837,9 @@ def _run(
                             )
                         )
 
+            # Lineage ke Bronze.
+            # Tiap row yang diterima disimpan bersama bronze_record_id dan pipeline_run_id
+            # agar traceability ke asal data Bronze tetap terjaga saat downstream query.
             insert_rows = [
                 {
                     **values,
