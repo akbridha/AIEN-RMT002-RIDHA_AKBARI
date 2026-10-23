@@ -279,7 +279,7 @@ def validate_gold_and_record_metadata(**context: Any) -> dict[str, Any]:
 
 
 with DAG(
-    dag_id="milestone1_omnichannel_pipeline",
+    dag_id="xbar",
     description=(
         "Pipeline omnichannel retail: validate raw -> init schema -> bronze -> silver "
         "-> quality gate -> gold -> validate gold "
