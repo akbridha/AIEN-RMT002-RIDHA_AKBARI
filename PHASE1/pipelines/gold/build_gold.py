@@ -703,7 +703,7 @@ def _run(
     )
     with connect("local") as connection:
         log.info("Clearing existing Gold rows for an atomic full rebuild")
-        for statement in DELETE_SQL:
+        for statement in DELETE_SQL:       #gold dihapus jika run ulang pipeline. beda dengan bronze
             connection.execute(statement)
 
         for table_number, (table, statement) in enumerate(BUILD_STATEMENTS, start=1):

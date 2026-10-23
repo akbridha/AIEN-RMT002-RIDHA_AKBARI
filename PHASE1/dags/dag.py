@@ -5,7 +5,8 @@ Urutan wajib:
         -> load Bronze -> build Silver -> quality gate (gagal -> berhenti)
         -> build Gold -> validate Gold dan record pipeline metadata
 
-Mode operasi dikontrol oleh environment variable ``PIPELINE_MODE``:
+Mode operasi default dikontrol oleh environment variable ``PIPELINE_MODE``
+dan dapat ditimpa per DAG run melalui ``dag_run.conf["mode"]``:
 
 * ``real`` (default) — setiap tahap memanggil modul pipeline yang sesuai
   (``pipelines.*``) dan terhubung ke PostgreSQL.
@@ -13,8 +14,12 @@ Mode operasi dikontrol oleh environment variable ``PIPELINE_MODE``:
   read-only (raw/schema), tanpa koneksi database atau operasi ingestion nyata.
   Gunakan untuk mendemokan dependency, rerun, dan quality gate.
 
-``dag_run.conf`` mendukung ``{"simulate_gate_failure": true}`` untuk
-mendemonstrasikan quality gate yang menghentikan tahap Gold.
+Parameter ``simulate_gate_failure`` bernilai ``false`` secara default. Set ke
+``true`` untuk mendemonstrasikan quality gate simulasi yang menghentikan Gold;
+parameter ini tidak memengaruhi mode real.
+
+Q = apakah dag looping selalu ?
+A = DAG ini dikonfigurasi schedule=None, jadi run hanya dimulai saat di-trigger secara manual—bukan berulang otomatis
 """
 
 from __future__ import annotations
@@ -29,11 +34,14 @@ from typing import Any
 
 from airflow import DAG
 from airflow.exceptions import AirflowException
+from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
 
 log = logging.getLogger(__name__)
 
 PIPELINE_MODE = os.getenv("PIPELINE_MODE", "real").strip().lower()
+if PIPELINE_MODE not in {"real", "simulate"}:
+    raise ValueError("PIPELINE_MODE must be either 'real' or 'simulate'.")
 RAW_DATA_DIR = Path(os.getenv("RAW_DATA_DIR", "data/raw"))
 SCHEMAS_DIR = Path(os.getenv("SCHEMAS_DIR", "database/schemas"))
 
@@ -64,11 +72,27 @@ def _run_id(context: dict[str, Any]) -> str:
     return str(context["dag_run"].run_id)
 
 
+def _pipeline_mode(context: dict[str, Any]) -> str:
+    """Pilih mode per run, dengan PIPELINE_MODE sebagai default."""
+    conf = context["dag_run"].conf or {}
+    mode = str(conf.get("mode", PIPELINE_MODE)).strip().lower()
+    if mode not in {"real", "simulate"}:
+        raise AirflowException(
+            f"Mode pipeline '{mode}' tidak valid. Gunakan 'real' atau 'simulate'."
+        )
+    return mode
+
+
 def _conf_flag(context: dict[str, Any], key: str) -> bool:
-    value = context["dag_run"].conf.get(key, False)
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes"}
-    return bool(value)
+    conf = context["dag_run"].conf or {}
+    value = conf.get(key, False)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes"}:
+        return True
+    if isinstance(value, str) and value.strip().lower() in {"0", "false", "no", ""}:
+        return False
+    raise AirflowException(f"Parameter '{key}' harus bernilai true atau false.")
 
 
 def _execute_real(stage: str, context: dict[str, Any]) -> Any:
@@ -107,7 +131,9 @@ def _simulate(stage: str, notes: list[str], context: dict[str, Any], pause: floa
 
 
 def _dispatch(stage: str, simulate_notes: list[str], context: dict[str, Any]) -> Any:
-    if PIPELINE_MODE == "real":
+    mode = _pipeline_mode(context)
+    log.info("Mode pipeline untuk run %s: %s", _run_id(context), mode)
+    if mode == "real":
         return _execute_real(stage, context)
     return _simulate(stage, simulate_notes, context)
 
@@ -130,7 +156,7 @@ def validate_raw_files(**context: Any) -> dict[str, Any]:
         "manifest.json diabaikan; mode real memeriksa struktur dan kemampuan parsing file",
         "mode simulasi hanya memeriksa daftar file, tanpa parsing atau koneksi database",
     ]
-    if PIPELINE_MODE == "simulate" and not source_files:
+    if _pipeline_mode(context) == "simulate" and not source_files:
         notes.append("belum ada file sumber yang ditemukan")
     return _dispatch("validate_raw_files", notes, context)
 
@@ -201,7 +227,7 @@ def quality_gate(**context: Any) -> dict[str, Any]:
         "referensi customer/channel/order/product/promotion/inventory valid",
         "jumlah rejected records tercatat dan dirinci",
     ]
-    if PIPELINE_MODE == "real":
+    if _pipeline_mode(context) == "real":
         return _execute_real("quality_gate", context)
     if _conf_flag(context, "simulate_gate_failure"):
         for check in checks:
@@ -238,7 +264,7 @@ def build_gold(**context: Any) -> dict[str, Any]:
 
 
 def validate_gold_and_record_metadata(**context: Any) -> dict[str, Any]:
-    if PIPELINE_MODE == "real":
+    if _pipeline_mode(context) == "real":
         return _execute_real("validate_gold_and_record_metadata", context)
     notes = [
         "verifikasi grain dan metric 5 tabel Gold terhadap kontrak gold.sql",
@@ -257,14 +283,27 @@ with DAG(
     description=(
         "Pipeline omnichannel retail: validate raw -> init schema -> bronze -> silver "
         "-> quality gate -> gold -> validate gold "
-        f"(mode {PIPELINE_MODE})"
+        f"(default mode {PIPELINE_MODE})"
     ),
     start_date=datetime(2025, 1, 1),
     schedule=None,  # trigger manual — cocok untuk simulasi dan demo
     catchup=False,
     max_active_runs=1,
-    tags=["milestone1", "omnichannel", "simulasi" if PIPELINE_MODE == "simulate" else "real"],
+    tags=["milestone1", "omnichannel"],
     doc_md=__doc__,
+    params={
+        "mode": Param(
+            PIPELINE_MODE,
+            type="string",
+            enum=["real", "simulate"],
+            description="Pilih real untuk menjalankan pipeline atau simulate untuk simulasi formalitas.",
+        ),
+        "simulate_gate_failure": Param(
+            False,
+            type="boolean",
+            description="Di mode simulate, paksa quality gate gagal agar task Gold tidak berjalan.",
+        ),
+    },
     default_args={
         "owner": "aXbar",
         "retries": 0,  # kegagalan (mis. quality gate) langsung terlihat di UI

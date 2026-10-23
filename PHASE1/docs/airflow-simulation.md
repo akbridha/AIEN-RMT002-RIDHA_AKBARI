@@ -1,11 +1,8 @@
-# Simulasi Airflow (mode `PIPELINE_MODE=simulate`)
+# Menjalankan DAG Airflow
 
-Konfigurasi ini menjalankan Airflow 2.10.4 di Docker untuk **mensimulasikan**
-seluruh tahap pipeline milestone P1M1 **tanpa operasi ingestion/build/transform
-nyata**: tidak ada koneksi database, tidak ada baris yang dimuat, tidak ada
-tabel yang ditulis. Setiap task hanya menulis log simulasi dan pemeriksaan
-file read-only (daftar file JSON/CSV dan file skema `database/schemas/*.sql`).
-`manifest.json`, jika ada, diabaikan.
+Konfigurasi ini menjalankan Airflow 2.10.4 di Docker. Setiap DAG run memiliki
+parameter `mode` dan `simulate_gate_failure`; mode dapat dipilih tanpa mengubah
+environment/container.
 
 ## Menjalankan
 
@@ -19,35 +16,49 @@ Buka **http://localhost:8081** → login `airflow` / `airflow`
 
 ## Menjalankan DAG
 
-1. Buka DAG `milestone1_omnichannel_pipeline` (langsung unpaused, schedule manual).
-2. Klik **Trigger DAG** — tujuh tahap berjalan berurutan:
+1. Buka DAG `milestone1_omnichannel_pipeline` (schedule manual).
+2. Klik **Trigger DAG** dan pilih parameter:
+   - `mode=simulate` untuk menjalankan simulasi formalitas. Tahap hanya menulis
+     log dan melakukan pemeriksaan file read-only; tidak ada koneksi database,
+     ingestion, transformasi, atau penulisan tabel.
+   - `mode=real` untuk menjalankan pipeline sungguhan. Ini default-nya, kecuali
+     `PIPELINE_MODE` di environment mengubah default.
+   - `simulate_gate_failure=false` secara default. Atur ke `true` hanya untuk
+     memaksa quality gate gagal pada mode simulasi; pada mode real parameter
+     ini tidak digunakan.
+3. Klik **Trigger** — tujuh tahap berjalan berurutan:
    `validate_raw_files → initialize_postgres_schemas → load_bronze →
    build_silver → quality_gate → build_gold → validate_gold_and_record_metadata`.
-3. Klik task → **Log** untuk melihat output `[SIMULASI] ...` beserta
+4. Klik task → **Log** untuk melihat output `[SIMULASI] ...` atau `[REAL] ...` beserta
    `pipeline_run_id` yang diteruskan antar tahap.
 
 Atau via CLI:
 
 ```powershell
-docker compose exec airflow-scheduler airflow dags trigger milestone1_omnichannel_pipeline
+docker compose exec airflow-scheduler airflow dags trigger milestone1_omnichannel_pipeline --conf '{"mode":"simulate","simulate_gate_failure":false}'
+docker compose exec airflow-scheduler airflow dags trigger milestone1_omnichannel_pipeline --conf '{"mode":"real"}'
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run milestone1_omnichannel_pipeline <run_id>
 ```
+
+Jika `mode` tidak diberikan, default-nya `PIPELINE_MODE` (atau `real` bila
+environment variable tidak diatur).
 
 ## Menguji quality gate menghentikan pipeline
 
 ```powershell
-docker compose exec airflow-scheduler airflow dags trigger milestone1_omnichannel_pipeline --conf '{\"simulate_gate_failure\":true}'
+docker compose exec airflow-scheduler airflow dags trigger milestone1_omnichannel_pipeline --conf '{"mode":"simulate","simulate_gate_failure":true}'
 ```
 
 Hasil yang diharapkan: `quality_gate=failed`, lalu `build_gold` dan
 `validate_gold_and_record_metadata` menjadi `upstream_failed` (tidak
-dijalankan). Escape `\"` diperlukan karena PowerShell membuang quote inner.
+dijalankan).
 
-## Beralih ke mode real (Hari 2–4)
+## Mode default lewat environment
 
-Set `PIPELINE_MODE=real` di environment compose (mis. di `.env`), lalu
-`docker compose up -d` ulang. Mode memanggil modul sesuai pemetaan di
-`dags/dag.py`:
+Untuk mengganti default bagi run yang tidak menentukan `mode`, set
+`PIPELINE_MODE=real` atau `PIPELINE_MODE=simulate` di environment compose.
+Override per-run melalui parameter Trigger DAG tetap dapat memilih mode yang
+berbeda. Mode real memanggil modul sesuai pemetaan di `dags/dag.py`:
 
 | Tahap | Modul |
 |---|---|
