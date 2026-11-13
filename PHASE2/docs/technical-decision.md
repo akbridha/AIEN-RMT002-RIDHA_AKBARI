@@ -1,0 +1,2 @@
+OPEN AI
+AGENT_MODEL=gpt-6-luna
