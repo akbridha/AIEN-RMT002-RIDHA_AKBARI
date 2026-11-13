@@ -1,1 +1,0 @@
-"""Participant data pipeline package."""
