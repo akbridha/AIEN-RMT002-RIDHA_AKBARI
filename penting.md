@@ -13,6 +13,9 @@ uvicorn sandbox_app:app --reload --port 8000
 -akses swaggernya 
 localhost:8000/docs
 
+-simulasi login.
+hit endpoint chat ``.../api/v1/chat``
+dengan login terlebih dahulu(tombol authorize di kanan atas. isi value dengan `token-alya`)
 
 ====skema database
 

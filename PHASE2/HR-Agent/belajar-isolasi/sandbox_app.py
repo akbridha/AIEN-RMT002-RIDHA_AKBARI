@@ -1,7 +1,9 @@
-from fastapi import FastAPI, Depends, Header, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Latihan FastAPI", version="0.1.0")
+security = HTTPBearer()
 
 
 class ChatRequest(BaseModel):
@@ -13,11 +15,8 @@ class ChatResponse(BaseModel):
     trace_id: str
 
 
-def current_user(authorization: str = Header(...)) -> dict:
-    # Contoh header: "Authorization: Bearer token-alya"
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Header auth tidak valid")
+def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    token = credentials.credentials
     users = {
         "token-alya": {"employee_id": "EMP-001", "role": "employee"},
         "token-bima": {"employee_id": "EMP-002", "role": "employee"},
