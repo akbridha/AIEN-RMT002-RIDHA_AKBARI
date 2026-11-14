@@ -1,3 +1,6 @@
+.\.venv\Scripts\Activate.ps1
+
+
 pip install "fastapi>=0.115,<1" "uvicorn[standard]>=0.34,<1"
 
 
