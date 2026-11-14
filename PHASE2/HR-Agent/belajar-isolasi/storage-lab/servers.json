@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "HR Assistant DB (pgvector)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "hr_assistant",
+      "Username": "hr_app",
+      "SSLMode": "prefer"
+    }
+  }
+}
