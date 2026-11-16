@@ -31,4 +31,30 @@ docker compose up -d
     Buka browser: http://localhost:5050
     Login pgAdmin:
     Email: admin@local.test
-    Password: admin
+    Password: admin.
+
+
+
+
+==TEST Indepeneden++
+API BE untuk FAST API ke DB.
+
+masuk ke directory `Docker compose up`  Container untuk db hidup
+
+jalankan script untuk API  `uvicorn app_dengan_api_db:app --reload --port 8002`
+
+bisa akses `http://localhost:8002/docs` muncul swagger.
+di situ bisa akses chat yang terhubngun dangan openAI
+
+
+kemudian untuk demo Fast API dengan database bisa buat dari folder
+D:\AIEN\AIEN-RMT002-RIDHA_AKBARI\PHASE2\HR-Agent\belajar-isolasi\storage-lab> 
+
+run `uvicorn app_dengan_db:app --reload --port 8001`
+
+bisa akses http://localhost:8001/docs 
+dan hit list karyawan untuk menampilkan daftar karywan langsung dari database.
+
+
+
+
