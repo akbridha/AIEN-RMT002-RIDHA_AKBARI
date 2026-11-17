@@ -99,37 +99,37 @@ PHASE 3 (Hari 8-10): Integration & Polish — 27 jam
 **Goal:** API skeleton berjalan, auth layer siap
 
 **Tasks:**
-- [ ] **20 min** — Create FastAPI app skeleton
-  - Setup `src/api.py` dengan `/healthz` endpoint
-  - Basic middleware & error handling
+- [x] **20 min** — Create FastAPI app skeleton
+  - Setup `src/api.py` dengan `/healthz` dan `/readyz` endpoint
+  - Basic middleware, HTTPBearer security & error handling
   - Jalankan: `uvicorn src.api:app --reload`
   - Verify: `curl http://localhost:8000/healthz`
 
-- [ ] **30 min** — Implement Auth Module
-  - Buat `src/auth.py`
-  - Parse Bearer token dari header
-  - Hardcode 2 demo tokens → map ke emp_id (e.g., "emp_a" → 1, "emp_b" → 2)
-  - Implement `verify_token(token) → emp_id` function
-  - Return 401 jika token invalid
+- [x] **30 min** — Implement Auth Module
+  - Terintegrasi di `src/api.py` (`get_auth`), `src/security.py` (`token_hash`), dan `src/repository.py` (`authenticate`)
+  - Parse Bearer token dari header `Authorization: Bearer <token>`
+  - Mapping demo tokens (`token-alya`, `token-bima`, `token-admin`) ke `AuthContext(employee_id, display_name, role)`
+  - Return 401 jika token invalid atau tidak disertakan
 
-- [ ] **20 min** — Test Auth
-  - Write unit test di `tests/test_auth.py`
-  - Test valid token → get emp_id
-  - Test invalid token → 401
-  - Run: `pytest tests/test_auth.py -v`
+- [x] **20 min** — Test Auth & Endpoint Contracts
+  - Unit & contract test di `tests/test_api.py`
+  - Test `/healthz` return `{"status": "ok"}`
+  - Test invalid/missing token → 401 Unauthorized
+  - Test RBAC: monitoring admin only → 403 Forbidden untuk karyawan non-admin
+  - Test data privacy: employee_b tidak bisa mengakses trace milik employee_a
+  - Run: `pytest tests/test_api.py -v`
 
-- [ ] **10 min** — Setup conversation skeleton
-  - Create `src/conversations.py` stub dengan TODO markers
-  - Placeholder untuk CRUD operations
-  - Link ke SQLite store (path di `.env`)
+- [x] **10 min** — Setup conversation skeleton & trace store
+  - Conversation state & traces di-handle oleh `src/agent.py` dan disimpan di repository (`src/repository.py` via `save_trace` / `get_trace` dan PostgreSQL / in-memory store)
+  - Endpoint `/api/v1/chat` dan `/api/v1/traces/{trace_id}` siap
 
-**Checkpoint:** ✅ API up, auth works, conversation scaffold ready
+**Checkpoint:** ✅ API up, auth works, test_api.py ready & verified
 
 **Deliverables:**
-- `src/api.py` dengan `/healthz` + auth middleware
-- `src/auth.py` dengan token verification
-- `tests/test_auth.py` passing
-- Connection to SQLite verified
+- `src/api.py` dengan `/healthz` + auth middleware via FastAPI Depends & HTTPBearer
+- `src/security.py` dengan hashing token & masking PII
+- `src/repository.py` dengan mapping token ke identitas pegawai
+- `tests/test_api.py` passing & terverifikasi
 
 ---
 
