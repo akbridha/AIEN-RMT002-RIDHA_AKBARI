@@ -56,5 +56,10 @@ bisa akses http://localhost:8001/docs
 dan hit list karyawan untuk menampilkan daftar karywan langsung dari database.
 
 
+run Stream lit
+
+masuk ke directory file FE stream lit lalu eksekusi `streamlit run app_fe_streamlit.py`
+
+
 
 
