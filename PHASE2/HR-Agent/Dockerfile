@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY data/ ./data/
 COPY tests/ ./tests/
+COPY assets/ ./assets/
 COPY app.py ui_contract.py demo_personas.json ./
 
 RUN useradd -m -u 1000 appuser && \
