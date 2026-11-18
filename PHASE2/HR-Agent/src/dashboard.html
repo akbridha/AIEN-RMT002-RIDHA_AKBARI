@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HR Agent - Database & Operations Dashboard</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-card: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --border: #475569;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .title-area h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .title-area p {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      margin-top: 4px;
+    }
+
+    .auth-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .input-group {
+      display: flex;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 12px;
+    }
+
+    .input-group label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-right: 8px;
+      font-weight: 600;
+    }
+
+    .input-group input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      width: 180px;
+    }
+
+    button {
+      background: var(--accent);
+      color: #0f172a;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+      color: white;
+    }
+
+    button.btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    button.btn-secondary:hover {
+      background: var(--border);
+    }
+
+    .badge-dev-token {
+      background: #0369a1;
+      color: #e0f2fe;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .badge-dev-token:hover {
+      background: #0284c7;
+    }
+
+    /* Metric Summary Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .metric-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      position: relative;
+    }
+
+    .metric-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .metric-sub {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    /* Alerts Box */
+    .alert-box {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--danger);
+      color: #fca5a5;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+    }
+
+    /* Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      background: transparent;
+      color: var(--text-secondary);
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: 10px 18px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+      background: transparent;
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom: 2px solid var(--accent);
+      font-weight: 600;
+      background: transparent;
+    }
+
+    /* Card Panels */
+    .panel {
+      display: none;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      overflow-x: auto;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .panel-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+
+    .filter-input {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      color: var(--text-primary);
+      font-size: 0.85rem;
+      min-width: 250px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      text-align: left;
+    }
+
+    th {
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      padding: 12px 16px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(71, 85, 105, 0.4);
+    }
+
+    tr:hover td {
+      background: rgba(51, 65, 85, 0.3);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    .badge-approved { background: rgba(34, 197, 94, 0.2); color: #86efac; border: 1px solid var(--success); }
+    .badge-pending { background: rgba(245, 158, 11, 0.2); color: #fde68a; border: 1px solid var(--warning); }
+    .badge-cancelled, .badge-rejected { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid var(--danger); }
+    .badge-role { background: rgba(56, 189, 248, 0.15); color: #7dd3fc; border: 1px solid #0284c7; }
+    .badge-leave-tag { background: #334155; color: #cbd5e1; padding: 2px 6px; margin: 2px; border-radius: 4px; font-size: 0.8rem; }
+
+    .balance-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 0.8rem;
+      margin-right: 6px;
+    }
+    .balance-num {
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    /* Modal for Trace Inspect */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(2px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 800px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    pre {
+      background: #090d16;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      color: #38bdf8;
+      font-family: monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="title-area">
+        <h1>
+          <span>🗄️</span> HR Database & Ops Dashboard
+        </h1>
+        <p>Inspeksi database, saldo jatah cuti, pengajuan cuti, tiket HR, dan audit trace secara langsung.</p>
+      </div>
+
+      <div class="auth-bar">
+        <div class="input-group">
+          <label for="adminToken">Admin Token:</label>
+          <input type="password" id="adminToken" value="token-admin" placeholder="Masukkan Bearer token">
+        </div>
+        <button id="saveTokenBtn">Simpan</button>
+        <button id="refreshBtn" class="btn-secondary">🔄 Refresh</button>
+      </div>
+    </header>
+
+    <!-- Quick Presets -->
+    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 20px; font-size: 0.8rem; color: var(--text-secondary);">
+      <span>Cepat coba token:</span>
+      <span class="badge-dev-token" onclick="setToken('token-admin')">token-admin (Admin)</span>
+      <span class="badge-dev-token" onclick="setToken('token-alya')">token-alya (EMP-001)</span>
+      <span class="badge-dev-token" onclick="setToken('token-bima')">token-bima (EMP-002)</span>
+      <span style="margin-left: auto;" id="connectionStatus"><span class="status-dot"></span>Backend Ready</span>
+    </div>
+
+    <!-- Alert Box -->
+    <div id="alertBox" class="alert-box"></div>
+
+    <!-- Metrics Summary -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-title">Total Agent Runs</div>
+        <div class="metric-value" id="metricRuns">-</div>
+        <div class="metric-sub">Total chat query yang diproses</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Error Rate</div>
+        <div class="metric-value" id="metricErrorRate">-</div>
+        <div class="metric-sub">Batas toleransi: &le; 10%</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">P95 Latency</div>
+        <div class="metric-value" id="metricP95">-</div>
+        <div class="metric-sub">Persentil 95 latensi LLM/tools</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Tool Calls</div>
+        <div class="metric-value" id="metricToolCalls">-</div>
+        <div class="metric-sub">Total eksekusi SQL & RAG tool</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('employees')">👥 Karyawan & Saldo Cuti</button>
+      <button class="tab-btn" onclick="switchTab('leaveRequests')">📅 Pengajuan Cuti</button>
+      <button class="tab-btn" onclick="switchTab('tickets')">🎫 Tiket Eskalasi HR</button>
+      <button class="tab-btn" onclick="switchTab('traces')">🔍 Agent Traces</button>
+    </div>
+
+    <!-- Panel 1: Karyawan & Saldo Cuti -->
+    <div id="panel-employees" class="panel active">
+      <div class="panel-header">
+        <div class="panel-title">Data Karyawan & Rincian Saldo Cuti</div>
+        <input type="text" id="filterEmp" class="filter-input" placeholder="Cari nama atau ID karyawan..." oninput="filterTable('empTable', this.value)">
+      </div>
+      <table id="empTable">
+        <thead>
+          <tr>
+            <th>ID Karyawan</th>
+            <th>Nama Lengkap</th>
+            <th>Role</th>
+            <th>Rincian Saldo Cuti (Hari Tersedia)</th>
+          </tr>
+        </thead>
+        <tbody id="empBody">
+          <tr><td colspan="4" class="empty-state">Memuat data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Panel 2: Pengajuan Cuti -->
+    <div id="panel-leaveRequests" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Daftar Pengajuan Cuti (Leave Requests)</div>
+        <input type="text" id="filterLeave" class="filter-input" placeholder="Cari ID request atau nama..." oninput="filterTable('leaveTable', this.value)">
+      </div>
+      <table id="leaveTable">
+        <thead>
+          <tr>
+            <th>ID Request</th>
+            <th>Karyawan</th>
+            <th>Tipe Cuti</th>
+            <th>Periode Cuti</th>
+            <th>Durasi</th>
+            <th>Status</th>
+            <th>Waktu Dibuat</th>
+          </tr>
+        </thead>
+        <tbody id="leaveBody">
+          <tr><td colspan="7" class="empty-state">Memuat data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Panel 3: Tiket Eskalasi HR -->
+    <div id="panel-tickets" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Tiket Kasus / Eskalasi HR</div>
+        <input type="text" id="filterTickets" class="filter-input" placeholder="Cari kategori atau ringkasan..." oninput="filterTable('ticketTable', this.value)">
+      </div>
+      <table id="ticketTable">
+        <thead>
+          <tr>
+            <th>ID Tiket</th>
+            <th>Karyawan</th>
+            <th>Kategori</th>
+            <th>Ringkasan Kasus</th>
+            <th>Waktu Dibuat</th>
+          </tr>
+        </thead>
+        <tbody id="ticketBody">
+          <tr><td colspan="5" class="empty-state">Memuat data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Panel 4: Agent Traces -->
+    <div id="panel-traces" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Riwayat Agent Traces & Audit LLM</div>
+        <input type="text" id="filterTraces" class="filter-input" placeholder="Cari trace ID atau outcome..." oninput="filterTable('traceTable', this.value)">
+      </div>
+      <table id="traceTable">
+        <thead>
+          <tr>
+            <th>Trace ID</th>
+            <th>ID Karyawan</th>
+            <th>Outcome</th>
+            <th>Latensi</th>
+            <th>Tokens (In/Out)</th>
+            <th>Biaya</th>
+            <th>Status Error</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="traceBody">
+          <tr><td colspan="8" class="empty-state">Memuat data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- Modal Inspector for Trace -->
+  <div id="traceModal" class="modal-overlay">
+    <div class="modal-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 id="modalTraceTitle">Detail Trace</h3>
+        <button class="btn-secondary" onclick="closeModal()">Tutup</button>
+      </div>
+      <pre id="modalTraceContent">Memuat...</pre>
+    </div>
+  </div>
+
+  <script>
+    let currentToken = localStorage.getItem('hr_dashboard_token') || 'token-admin';
+    document.getElementById('adminToken').value = currentToken;
+
+    document.getElementById('saveTokenBtn').addEventListener('click', () => {
+      currentToken = document.getElementById('adminToken').value.trim();
+      localStorage.setItem('hr_dashboard_token', currentToken);
+      fetchAll();
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      fetchAll();
+    });
+
+    function setToken(tok) {
+      document.getElementById('adminToken').value = tok;
+      currentToken = tok;
+      localStorage.setItem('hr_dashboard_token', tok);
+      fetchAll();
+    }
+
+    function switchTab(tabKey) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
+
+      event.target.classList.add('active');
+      const targetPanel = document.getElementById(`panel-${tabKey}`);
+      if (targetPanel) targetPanel.classList.add('active');
+    }
+
+    async function apiFetch(endpoint) {
+      const resp = await fetch(endpoint, {
+        headers: {
+          'Authorization': `Bearer ${currentToken}`
+        }
+      });
+      if (resp.status === 401 || resp.status === 403) {
+        throw new Error(`Akses ditolak (${resp.status}). Harap gunakan token admin (misal: token-admin).`);
+      }
+      if (!resp.ok) {
+        throw new Error(`HTTP Error ${resp.status}`);
+      }
+      return await resp.json();
+    }
+
+    // Format badge status
+    function getStatusBadge(status) {
+      let cls = 'badge-pending';
+      if (status === 'approved') cls = 'badge-approved';
+      else if (status === 'cancelled' || status === 'rejected') cls = 'badge-cancelled';
+      return `<span class="badge ${cls}">${status.replace(/_/g, ' ')}</span>`;
+    }
+
+    // Load Metrics
+    async function loadMetrics() {
+      try {
+        const summary = await apiFetch('/api/v1/monitoring/summary');
+        document.getElementById('metricRuns').innerText = summary.run_count ?? 0;
+        document.getElementById('metricErrorRate').innerText = `${((summary.error_rate || 0) * 100).toFixed(1)}%`;
+        document.getElementById('metricP95').innerText = `${summary.p95_latency_ms || 0} ms`;
+        document.getElementById('metricToolCalls').innerText = summary.tool_calls ?? 0;
+
+        // Alerts
+        const alerts = await apiFetch('/api/v1/monitoring/alerts');
+        const alertBox = document.getElementById('alertBox');
+        if (alerts && alerts.length > 0) {
+          alertBox.style.display = 'flex';
+          alertBox.innerHTML = `⚠️ <strong>Peringatan Sistem:</strong> ` + alerts.map(a => a.message).join(' | ');
+        } else {
+          alertBox.style.display = 'none';
+        }
+      } catch (err) {
+        console.warn('Metrics failed:', err.message);
+      }
+    }
+
+    // Load Employees
+    async function loadEmployees() {
+      const tbody = document.getElementById('empBody');
+      try {
+        const data = await apiFetch('/api/v1/dashboard/employees');
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Belum ada data karyawan</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(emp => {
+          const balancesHtml = (emp.balances || []).map(b => `
+            <span class="balance-pill">
+              <span>${b.leave_type}:</span>
+              <span class="balance-num">${b.available_days} hari</span>
+            </span>
+          `).join('') || '<span style="color:var(--text-secondary)">-</span>';
+
+          return `
+            <tr>
+              <td><strong>${emp.employee_id}</strong></td>
+              <td>${emp.display_name}</td>
+              <td><span class="badge badge-role">${emp.role}</span></td>
+              <td>${balancesHtml}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4" class="empty-state" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    // Load Leave Requests
+    async function loadLeaveRequests() {
+      const tbody = document.getElementById('leaveBody');
+      try {
+        const data = await apiFetch('/api/v1/dashboard/leave-requests');
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Tidak ada riwayat pengajuan cuti</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(lr => `
+          <tr>
+            <td><strong>${lr.request_id}</strong></td>
+            <td>${lr.display_name ? `${lr.display_name} (${lr.employee_id})` : lr.employee_id}</td>
+            <td><span class="badge-leave-tag">${lr.leave_type}</span></td>
+            <td>${lr.start_date} s/d ${lr.end_date}</td>
+            <td><strong>${lr.business_days}</strong> hari kerja</td>
+            <td>${getStatusBadge(lr.status)}</td>
+            <td style="color:var(--text-secondary); font-size:0.8rem">${lr.created_at ? new Date(lr.created_at).toLocaleString('id-ID') : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    // Load Tickets
+    async function loadTickets() {
+      const tbody = document.getElementById('ticketBody');
+      try {
+        const data = await apiFetch('/api/v1/dashboard/tickets');
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Tidak ada tiket eskalasi HR</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(t => `
+          <tr>
+            <td><strong>${t.ticket_id}</strong></td>
+            <td>${t.display_name ? `${t.display_name} (${t.employee_id})` : t.employee_id}</td>
+            <td><span class="badge badge-role">${t.category}</span></td>
+            <td>${t.summary}</td>
+            <td style="color:var(--text-secondary); font-size:0.8rem">${t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    // Load Traces
+    async function loadTraces() {
+      const tbody = document.getElementById('traceBody');
+      try {
+        const data = await apiFetch('/api/v1/dashboard/traces');
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Belum ada trace tersimpan</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(tr => `
+          <tr>
+            <td><code>${tr.trace_id}</code></td>
+            <td>${tr.employee_id}</td>
+            <td><span class="badge ${tr.outcome === 'answered' ? 'badge-approved' : 'badge-pending'}">${tr.outcome || '-'}</span></td>
+            <td>${tr.latency_ms != null ? `${tr.latency_ms} ms` : '-'}</td>
+            <td>${tr.input_tokens || 0} / ${tr.output_tokens || 0}</td>
+            <td>${tr.estimated_cost != null ? `$${tr.estimated_cost.toFixed(4)}` : '-'}</td>
+            <td>${tr.error ? `<span class="badge badge-cancelled">Error</span>` : '<span style="color:var(--success)">OK</span>'}</td>
+            <td>
+              <button class="btn-secondary" style="padding:4px 8px; font-size:0.75rem;" onclick="viewTrace('${tr.trace_id}')">Detail</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" class="empty-state" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    async function viewTrace(traceId) {
+      document.getElementById('traceModal').classList.add('active');
+      document.getElementById('modalTraceTitle').innerText = `Detail Trace: ${traceId}`;
+      document.getElementById('modalTraceContent').innerText = 'Memuat data trace...';
+      try {
+        const trace = await apiFetch(`/api/v1/traces/${traceId}`);
+        document.getElementById('modalTraceContent').innerText = JSON.stringify(trace, null, 2);
+      } catch (err) {
+        document.getElementById('modalTraceContent').innerText = 'Gagal memuat detail trace: ' + err.message;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('traceModal').classList.remove('active');
+    }
+
+    function filterTable(tableId, query) {
+      const q = query.toLowerCase();
+      const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+      rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+      });
+    }
+
+    function fetchAll() {
+      loadMetrics();
+      loadEmployees();
+      loadLeaveRequests();
+      loadTickets();
+      loadTraces();
+    }
+
+    // Auto-load on page load
+    window.addEventListener('DOMContentLoaded', fetchAll);
+  </script>
+</body>
+</html>

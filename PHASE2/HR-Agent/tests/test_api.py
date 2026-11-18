@@ -38,3 +38,45 @@ def test_trace_cannot_be_read_by_another_employee(client: TestClient) -> None:
     )
     assert response.status_code == 403
 
+
+def test_dashboard_ui_and_endpoints(client: TestClient) -> None:
+    # Dashboard HTML SPA route
+    res_ui = client.get("/dashboard")
+    assert res_ui.status_code == 200
+    assert "text/html" in res_ui.headers["content-type"]
+    assert "HR Database & Ops Dashboard" in res_ui.text
+
+    admin_headers = {"Authorization": "Bearer token-admin"}
+
+    # Unauthorized access check
+    assert client.get("/api/v1/dashboard/employees").status_code == 401
+    assert client.get("/api/v1/dashboard/employees", headers=AUTH).status_code == 403
+
+    # Employees & balances
+    res_emp = client.get("/api/v1/dashboard/employees", headers=admin_headers)
+    assert res_emp.status_code == 200
+    emp_data = res_emp.json()
+    assert isinstance(emp_data, list)
+    emp_001 = next((e for e in emp_data if e["employee_id"] == "EMP-001"), None)
+    assert emp_001 is not None
+    assert emp_001["display_name"] == "Alya Pratama"
+    annual = next((b for b in emp_001["balances"] if b["leave_type"] == "annual"), None)
+    assert annual is not None
+    assert annual["available_days"] == 8
+
+    # Leave requests
+    res_leave = client.get("/api/v1/dashboard/leave-requests", headers=admin_headers)
+    assert res_leave.status_code == 200
+    assert isinstance(res_leave.json(), list)
+
+    # Tickets
+    res_tickets = client.get("/api/v1/dashboard/tickets", headers=admin_headers)
+    assert res_tickets.status_code == 200
+    assert isinstance(res_tickets.json(), list)
+
+    # Traces
+    res_traces = client.get("/api/v1/dashboard/traces", headers=admin_headers)
+    assert res_traces.status_code == 200
+    assert isinstance(res_traces.json(), list)
+
+

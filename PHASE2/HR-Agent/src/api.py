@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .agent import AgentService
@@ -129,6 +130,37 @@ def create_app(*, settings: Settings | None = None, repository=None, cache=None,
                 "message": f"Tingkat kesalahan sistem melebihi 10%: {summary['error_rate']:.1%}",
             })
         return alerts
+
+    # --- Dashboard endpoints (monitoring_admin only) ---
+
+    @app.get("/api/v1/dashboard/employees")
+    def dashboard_employees(auth: AuthContext = Depends(get_auth)) -> list[dict[str, Any]]:
+        if auth.role != "monitoring_admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Monitoring admin only")
+        return repository.get_all_employees_with_balances()
+
+    @app.get("/api/v1/dashboard/leave-requests")
+    def dashboard_leave_requests(auth: AuthContext = Depends(get_auth)) -> list[dict[str, Any]]:
+        if auth.role != "monitoring_admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Monitoring admin only")
+        return repository.get_all_leave_requests()
+
+    @app.get("/api/v1/dashboard/tickets")
+    def dashboard_tickets(auth: AuthContext = Depends(get_auth)) -> list[dict[str, Any]]:
+        if auth.role != "monitoring_admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Monitoring admin only")
+        return repository.get_all_tickets()
+
+    @app.get("/api/v1/dashboard/traces")
+    def dashboard_traces(auth: AuthContext = Depends(get_auth)) -> list[dict[str, Any]]:
+        if auth.role != "monitoring_admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Monitoring admin only")
+        return repository.get_recent_traces(limit=100)
+
+    @app.get("/dashboard", include_in_schema=False)
+    def dashboard_ui() -> FileResponse:
+        dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+        return FileResponse(dashboard_path, media_type="text/html")
 
     return app
 

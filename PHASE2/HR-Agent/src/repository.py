@@ -25,6 +25,10 @@ class Repository(Protocol):
     def save_trace(self, trace: dict[str, Any]) -> None: ...
     def get_trace(self, trace_id: str) -> dict[str, Any] | None: ...
     def monitoring_summary(self) -> dict[str, Any]: ...
+    def get_all_employees_with_balances(self) -> list[dict[str, Any]]: ...
+    def get_all_leave_requests(self) -> list[dict[str, Any]]: ...
+    def get_all_tickets(self) -> list[dict[str, Any]]: ...
+    def get_recent_traces(self, limit: int) -> list[dict[str, Any]]: ...
 
 
 class ConflictError(RuntimeError):
@@ -189,6 +193,77 @@ class MemoryRepository:
             "p95_latency_ms": p95,
             "tool_calls": tool_calls_count,
         }
+
+    def get_all_employees_with_balances(self) -> list[dict[str, Any]]:
+        result = []
+        seen = set()
+        for token, user in self.users.items():
+            emp_id = user["employee_id"]
+            if emp_id in seen:
+                continue
+            seen.add(emp_id)
+            balances = self.balances.get(emp_id, {})
+            result.append({
+                "employee_id": emp_id,
+                "display_name": user["display_name"],
+                "role": user["role"],
+                "balances": [
+                    {"leave_type": lt, "available_days": days}
+                    for lt, days in balances.items()
+                ],
+            })
+        return result
+
+    def get_all_leave_requests(self) -> list[dict[str, Any]]:
+        result = []
+        emp_names = {u["employee_id"]: u["display_name"] for u in self.users.values()}
+        for emp_id, requests in self.leave_requests.items():
+            for req in requests:
+                result.append({
+                    "request_id": req.request_id,
+                    "employee_id": emp_id,
+                    "display_name": emp_names.get(emp_id, emp_id),
+                    "leave_type": req.leave_type,
+                    "start_date": req.start_date.isoformat() if hasattr(req.start_date, "isoformat") else str(req.start_date),
+                    "end_date": req.end_date.isoformat() if hasattr(req.end_date, "isoformat") else str(req.end_date),
+                    "business_days": req.business_days,
+                    "status": req.status,
+                    "created_at": req.created_at.isoformat() if hasattr(req.created_at, "isoformat") else str(req.created_at),
+                })
+        return result
+
+    def get_all_tickets(self) -> list[dict[str, Any]]:
+        emp_names = {u["employee_id"]: u["display_name"] for u in self.users.values()}
+        return [
+            {
+                "ticket_id": t["ticket_id"],
+                "employee_id": t["employee_id"],
+                "display_name": emp_names.get(t["employee_id"], t["employee_id"]),
+                "category": t["category"],
+                "summary": t["summary"],
+                "created_at": t["created_at"].isoformat() if hasattr(t["created_at"], "isoformat") else str(t["created_at"]),
+            }
+            for t in self.tickets
+        ]
+
+    def get_recent_traces(self, limit: int = 50) -> list[dict[str, Any]]:
+        traces = list(self.traces.values())
+        traces.sort(key=lambda t: t.get("created_at", ""), reverse=True)
+        return [
+            {
+                "trace_id": t["trace_id"],
+                "employee_id": t["employee_id"],
+                "conversation_id": t.get("conversation_id"),
+                "outcome": t.get("outcome"),
+                "latency_ms": t.get("latency_ms"),
+                "input_tokens": t.get("input_tokens"),
+                "output_tokens": t.get("output_tokens"),
+                "estimated_cost": t.get("estimated_cost"),
+                "error": t.get("error"),
+                "created_at": t.get("created_at").isoformat() if hasattr(t.get("created_at"), "isoformat") else str(t.get("created_at") or ""),
+            }
+            for t in traces[:limit]
+        ]
 
 
 class PostgresRepository:
@@ -584,4 +659,126 @@ class PostgresRepository:
                     }
         except Exception:
             return {"run_count": 0, "error_rate": 0.0, "p95_latency_ms": 0, "tool_calls": 0}
+
+    def get_all_employees_with_balances(self) -> list[dict[str, Any]]:
+        try:
+            with self.pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT employee_id, display_name, role FROM employee ORDER BY employee_id;"
+                    )
+                    employees = cur.fetchall()
+                    result = []
+                    for emp in employees:
+                        emp_id, display_name, role = emp
+                        cur.execute(
+                            "SELECT leave_type, available_days FROM leave_balance WHERE employee_id = %s;",
+                            (emp_id,),
+                        )
+                        balances = cur.fetchall()
+                        result.append({
+                            "employee_id": emp_id,
+                            "display_name": display_name,
+                            "role": role,
+                            "balances": [
+                                {"leave_type": b[0], "available_days": b[1]}
+                                for b in balances
+                            ],
+                        })
+                    return result
+        except Exception:
+            return []
+
+    def get_all_leave_requests(self) -> list[dict[str, Any]]:
+        try:
+            with self.pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT lr.request_id, lr.employee_id, e.display_name,
+                               lr.leave_type, lr.start_date, lr.end_date,
+                               lr.business_days, lr.status, lr.created_at
+                        FROM leave_request lr
+                        JOIN employee e ON lr.employee_id = e.employee_id
+                        ORDER BY lr.created_at DESC;
+                        """
+                    )
+                    rows = cur.fetchall()
+                    return [
+                        {
+                            "request_id": r[0],
+                            "employee_id": r[1],
+                            "display_name": r[2],
+                            "leave_type": r[3],
+                            "start_date": r[4].isoformat() if r[4] else None,
+                            "end_date": r[5].isoformat() if r[5] else None,
+                            "business_days": r[6],
+                            "status": r[7],
+                            "created_at": r[8].isoformat() if r[8] else None,
+                        }
+                        for r in rows
+                    ]
+        except Exception:
+            return []
+
+    def get_all_tickets(self) -> list[dict[str, Any]]:
+        try:
+            with self.pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT ht.ticket_id, ht.employee_id, e.display_name,
+                               ht.category, ht.summary, ht.created_at
+                        FROM hr_ticket ht
+                        JOIN employee e ON ht.employee_id = e.employee_id
+                        ORDER BY ht.created_at DESC;
+                        """
+                    )
+                    rows = cur.fetchall()
+                    return [
+                        {
+                            "ticket_id": r[0],
+                            "employee_id": r[1],
+                            "display_name": r[2],
+                            "category": r[3],
+                            "summary": r[4],
+                            "created_at": r[5].isoformat() if r[5] else None,
+                        }
+                        for r in rows
+                    ]
+        except Exception:
+            return []
+
+    def get_recent_traces(self, limit: int = 50) -> list[dict[str, Any]]:
+        try:
+            with self.pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT trace_id, employee_id, conversation_id, outcome,
+                               latency_ms, input_tokens, output_tokens, estimated_cost, error, created_at
+                        FROM agent_trace
+                        ORDER BY created_at DESC
+                        LIMIT %s;
+                        """,
+                        (limit,),
+                    )
+                    rows = cur.fetchall()
+                    return [
+                        {
+                            "trace_id": r[0],
+                            "employee_id": r[1],
+                            "conversation_id": r[2],
+                            "outcome": r[3],
+                            "latency_ms": r[4],
+                            "input_tokens": r[5],
+                            "output_tokens": r[6],
+                            "estimated_cost": float(r[7]) if r[7] is not None else None,
+                            "error": r[8],
+                            "created_at": r[9].isoformat() if r[9] else None,
+                        }
+                        for r in rows
+                    ]
+        except Exception:
+            return []
 
