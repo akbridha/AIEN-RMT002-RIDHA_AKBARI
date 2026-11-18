@@ -45,7 +45,7 @@ Anda dapat memilih salah satu dari dua jalur eksekusi di bawah ini:
 Tandai `[x]` saat menyelesaikan tiap tahap:
 
 ### FASE 1: Konfigurasi Environment
-- [ ] **1.1. Konfigurasi file `.env` di `PHASE2/HR-Agent/`**
+- [x] **1.1. Konfigurasi file `.env` di `PHASE2/HR-Agent/`**
   - Pastikan variabel berikut terisi di `PHASE2/HR-Agent/.env`:
     ```ini
     OPENAI_API_KEY=sk-...
@@ -58,13 +58,13 @@ Tandai `[x]` saat menyelesaikan tiap tahap:
     ```
 
 ### FASE 2: Build & Jalankan Service Infrastruktur
-- [ ] **2.1. Build Image Aplikasi (API & Streamlit)**
+- [x] **2.1. Build Image Aplikasi (API & Streamlit)**
   - Masuk ke folder proyek utama dan build image:
     ```powershell
     cd PHASE2/HR-Agent
     docker compose build api streamlit
     ```
-- [ ] **2.2. Jalankan Database (pgvector) dan Redis**
+- [x] **2.2. Jalankan Database (pgvector) dan Redis**
   - Jalankan container database dan cache:
     ```powershell
     docker compose up -d postgres redis
@@ -75,7 +75,7 @@ Tandai `[x]` saat menyelesaikan tiap tahap:
     ```
 
 ### FASE 3: Seeding Database & Knowledge Base Vektor
-- [ ] **3.1. Eksekusi Seeding via Container API**
+- [x] **3.1. Eksekusi Seeding via Container API**
   - Jalankan script `src.setup_lab` untuk membuat tabel, memasukkan data karyawan (RDBMS), dan meng-embed markdown kebijakan ke pgvector (Unstructured):
     ```powershell
     docker compose run --rm api python -m src.setup_lab
@@ -83,16 +83,16 @@ Tandai `[x]` saat menyelesaikan tiap tahap:
   - Tunggu hingga proses embedding dan upsert policy chunk selesai tanpa error.
 
 ### FASE 4: Jalankan Aplikasi & Uji Coba End-to-End
-- [ ] **4.1. Nyalakan Service API dan Streamlit**
+- [x] **4.1. Nyalakan Service API dan Streamlit**
   - Jalankan:
     ```powershell
     docker compose up -d api streamlit
     ```
   - Cek log jika diperlukan: `docker compose logs -f api`
-- [ ] **4.2. Cek Kesiapan Endpoint API (Port 8000)**
+- [x] **4.2. Cek Kesiapan Endpoint API (Port 8000)**
   - Buka browser ke `http://localhost:8000/healthz` ➡️ respon: `{"status": "ok"}`
   - Buka `http://localhost:8000/readyz` ➡️ respon: `{"status": "ready"}`
-- [ ] **4.3. Uji Chat UI Streamlit (Port 8501)**
+- [x] **4.3. Uji Chat UI Streamlit (Port 8501)**
   - Buka browser ke `http://localhost:8501`.
   - Pilih persona: **Alya Pratama**.
   - **Uji Skenario 1 (Query RDBMS):**

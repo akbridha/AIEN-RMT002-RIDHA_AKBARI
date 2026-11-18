@@ -60,13 +60,14 @@ class OpenAIProvider:
         ] if tools else None
 
         kwargs: dict[str, Any] = {
-            "model": self.settings.agent_model or "gpt-4o-mini",
+            "model": self.settings.agent_model or "gpt-6-luna",
             "messages": messages,
-            "max_tokens": max_output_tokens,
+            "max_completion_tokens": max_output_tokens,
             "user": safety_identifier,
         }
         if formatted_tools:
             kwargs["tools"] = formatted_tools
+            kwargs["extra_body"] = {"reasoning_effort": "none"}
 
         completion = self.client.chat.completions.create(**kwargs)
         choice = completion.choices[0]
