@@ -37,10 +37,15 @@ services:
       redis: {condition: service_healthy}
   streamlit:
     build: .
-    command: ["streamlit", "run", "app.py", "--server.address", "0.0.0.0"]
+    command: ["streamlit", "run", "app.py", "--server.address", "0.0.0.0",
+              "--server.fileWatcherType", "poll"]
     environment:
       API_URL: http://api:8000
     ports: ["${STREAMLIT_PORT:-8501}:8501"]
     depends_on: [api]
+    volumes:
+      - ./app.py:/app/app.py
+      - ./ui_contract.py:/app/ui_contract.py
+      - ./assets:/app/assets
 volumes:
   postgres_data:

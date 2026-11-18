@@ -277,12 +277,12 @@ def request(method: str, path: str, token: str, **kwargs):
     return response.json()
 
 
-st.set_page_config(page_title="Asisten HR Nusantara Digital", page_icon="", layout="wide")
+st.set_page_config(page_title="OnCall-HR-ADMO", page_icon="⌬", layout="wide")
 _inject_custom_theme()
 
 _logo_file = _ASSETS / "text_logo2.png"
 if _logo_file.is_file():
-    st.sidebar.image(str(_logo_file), use_container_width=True)
+    st.sidebar.image(str(_logo_file), width="stretch")
 
 personas = load_personas(Path(__file__).with_name("demo_personas.json"))
 persona = st.sidebar.selectbox("Persona demo", personas, format_func=lambda item: item["label"])
@@ -290,8 +290,8 @@ select_persona(st.session_state, persona)
 st.sidebar.caption(persona["scenario"])
 token = persona["demo_token"]
 
-st.title("Asisten Kebijakan HR dan Cuti")
-st.caption("Data dan token pada aplikasi ini sepenuhnya sintetis untuk kebutuhan pembelajaran.")
+st.title("꥟ OnCall-HR")
+st.caption("Asisten Kebijakan HR dan Cuti Karyawan PT.ADARO Jobsite ADMO")
 
 chat_tab, leave_tab, monitor_tab = st.tabs(["Percakapan", "Permintaan Cuti", "Monitoring"])
 
